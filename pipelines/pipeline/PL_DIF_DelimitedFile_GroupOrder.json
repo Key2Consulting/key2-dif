@@ -1,0 +1,342 @@
+{
+	"name": "PL_DIF_DelimitedFile_GroupOrder",
+	"properties": {
+		"activities": [
+			{
+				"name": "LU Get DIGroupTaskPriorityOrder",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "Start Pipeline Run",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderStoredProcedureName": "[DIF].[GetDIGroupTaskPriorityOrder]",
+						"storedProcedureParameters": {
+							"DIGroupName": {
+								"type": "String",
+								"value": {
+									"value": "@pipeline().parameters.DIGroupName",
+									"type": "Expression"
+								}
+							},
+							"ProjectName": {
+								"type": "String",
+								"value": {
+									"value": "@pipeline().parameters.ProjectName",
+									"type": "Expression"
+								}
+							}
+						},
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_Misc_CoreMetaDB",
+						"type": "DatasetReference"
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "Start Pipeline Run",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[DIF].[StartPipelineRun]",
+					"storedProcedureParameters": {
+						"PipelineFullName": {
+							"value": {
+								"value": "@pipeline().Pipeline",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"PipelineRunID": {
+							"value": {
+								"value": "@pipeline().RunId",
+								"type": "Expression"
+							},
+							"type": "String"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_DIF_Metadata",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "End Pipeline Run",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "Process Each DI Task Priority Group",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[DIF].[EndPipelineRun]",
+					"storedProcedureParameters": {
+						"PipelineFullName": {
+							"value": {
+								"value": "@pipeline().Pipeline",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"PipelineRunID": {
+							"value": {
+								"value": "@pipeline().RunId",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"PipelineStatus": {
+							"value": "Succeeded",
+							"type": "String"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_DIF_Metadata",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "Process Each DI Task Priority Group",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "LU Get DIGroupTaskPriorityOrder",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('LU Get DIGroupTaskPriorityOrder').output.value",
+						"type": "Expression"
+					},
+					"isSequential": true,
+					"activities": [
+						{
+							"name": "PL_DIF_DelimitedFile_TaskLoop",
+							"type": "ExecutePipeline",
+							"dependsOn": [],
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "PL_DIF_DelimitedFile_TaskLoop",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"DIGroupKey": {
+										"value": "@item().DIGroupKey",
+										"type": "Expression"
+									},
+									"DIGroupTaskPriorityOrder": {
+										"value": "@item().DIGroupTaskPriorityOrder",
+										"type": "Expression"
+									},
+									"DITaskKey": 0,
+									"ProjectName": {
+										"value": "@pipeline().parameters.ProjectName",
+										"type": "Expression"
+									}
+								}
+							}
+						},
+						{
+							"name": "Send Error Alert",
+							"type": "ExecutePipeline",
+							"dependsOn": [
+								{
+									"activity": "PL_DIF_DelimitedFile_TaskLoop",
+									"dependencyConditions": [
+										"Failed"
+									]
+								}
+							],
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "PL_DIF_SendEmailAlert",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"EmailTo": "mark.swiderski@key2consulting.com",
+									"ProjectName": {
+										"value": "@pipeline().parameters.ProjectName",
+										"type": "Expression"
+									},
+									"Subject": "Pipeline Failure - PL_DIF_DelimitedFile_GroupOrder",
+									"ErrorMessage": {
+										"value": "@{activity('PL_DIF_DelimitedFile_TaskLoop').Error.Message}",
+										"type": "Expression"
+									}
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Send Error Alert_Lookup",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "LU Get DIGroupTaskPriorityOrder",
+						"dependencyConditions": [
+							"Failed"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "PL_DIF_SendEmailAlert",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"EmailTo": "mark.swiderski@key2consulting.com",
+						"ProjectName": {
+							"value": "@pipeline().parameters.ProjectName",
+							"type": "Expression"
+						},
+						"Subject": "Pipeline Failure - PL_DIF_DelimitedFile_GroupOrder",
+						"ErrorMessage": {
+							"value": "@{activity('LU Get DIGroupTaskPriorityOrder').Error.Message}",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Send Error Alert_Lookup_StartPipeline",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "Start Pipeline Run",
+						"dependencyConditions": [
+							"Failed"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "PL_DIF_SendEmailAlert",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"EmailTo": "mark.swiderski@key2consulting.com",
+						"ProjectName": {
+							"value": "@pipeline().parameters.ProjectName",
+							"type": "Expression"
+						},
+						"Subject": "Pipeline Failure - PL_DIF_DelimitedFile_GroupOrder",
+						"ErrorMessage": {
+							"value": "@{activity('Start Pipeline Run').Error.Message}",
+							"type": "Expression"
+						}
+					}
+				}
+			},
+			{
+				"name": "Send Error Alert_Lookup_StartPipeline_EndPipeline",
+				"type": "ExecutePipeline",
+				"dependsOn": [
+					{
+						"activity": "End Pipeline Run",
+						"dependencyConditions": [
+							"Failed"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"pipeline": {
+						"referenceName": "PL_DIF_SendEmailAlert",
+						"type": "PipelineReference"
+					},
+					"waitOnCompletion": true,
+					"parameters": {
+						"EmailTo": "mark.swiderski@key2consulting.com",
+						"ProjectName": {
+							"value": "@pipeline().parameters.ProjectName",
+							"type": "Expression"
+						},
+						"Subject": "Pipeline Failure - PL_DIF_DelimitedFile_GroupOrder",
+						"ErrorMessage": {
+							"value": "@{activity('End Pipeline Run').Error.Message}",
+							"type": "Expression"
+						}
+					}
+				}
+			}
+		],
+		"parameters": {
+			"ProjectName": {
+				"type": "string",
+				"defaultValue": "EIA-Electricity Generation"
+			},
+			"DIGroupName": {
+				"type": "string",
+				"defaultValue": "EIA-ElecGen-DF to Bronze + Silver Zones"
+			}
+		},
+		"variables": {
+			"varPipelineIsValid": {
+				"type": "String",
+				"defaultValue": "Y"
+			},
+			"varDITasksList": {
+				"type": "Array"
+			}
+		},
+		"folder": {
+			"name": "DIF DelimitedFile"
+		},
+		"annotations": [],
+		"lastPublishTime": "2023-08-29T20:16:41Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

@@ -1,0 +1,12 @@
+{
+	"name": "LS_DIF_KeyVault",
+	"type": "Microsoft.DataFactory/factories/linkedservices",
+	"properties": {
+		"type": "AzureKeyVault",
+		"typeProperties": {
+			"baseUrl": "https://kv-key2demo-dev-eus-001.vault.azure.net/"
+		},
+		"description": "Linked Service to Key Vault",
+		"annotations": []
+	}
+}

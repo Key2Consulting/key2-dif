@@ -1,0 +1,14 @@
+{
+	"name": "LS_Core_DataBricks_Pool",
+	"type": "Microsoft.DataFactory/factories/linkedservices",
+	"properties": {
+		"annotations": [],
+		"type": "AzureDatabricks",
+		"typeProperties": {
+			"domain": "https://adb-6999517856698859.19.azuredatabricks.net/",
+			"authentication": "MSI",
+			"workspaceResourceId": "/subscriptions/9c737f1b-8965-43e1-ab39-4074136b352d/resourceGroups/rg-key2demo-dev-eastus-001/providers/Microsoft.Databricks/workspaces/dbw-key2demo-dev-eastus-001",
+			"existingClusterId": "0817-170253-honrb93t"
+		}
+	}
+}

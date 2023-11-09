@@ -1,0 +1,164 @@
+{
+	"name": "PL_DIF_SendEmailAlert",
+	"properties": {
+		"activities": [
+			{
+				"name": "LogicApp Send Email Alert",
+				"type": "WebActivity",
+				"dependsOn": [
+					{
+						"activity": "Set AlertTo Variable",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"url": "https://prod-94.eastus.logic.azure.com:443/workflows/860f0f55a3494ca894ef89712ff4e9a8/triggers/manual/paths/invoke?api-version=2016-10-01&sp=%2Ftriggers%2Fmanual%2Frun&sv=1.0&sig=nZDNpDPmQYNsFqsO0fP7Dn2ZxCPiOCy2qSsfOKqmJ1Q",
+					"method": "POST",
+					"headers": {
+						"Content-Type": "application/json"
+					},
+					"body": {
+						"DataFactoryName": "@{pipeline().DataFactory}",
+						"PipelineName": "@{pipeline().Pipeline}",
+						"Subject": "@{pipeline().parameters.Subject}",
+						"ErrorMessage": "@{pipeline().parameters.ErrorMessage}",
+						"EmailTo": "@pipeline().parameters.EmailTo"
+					}
+				}
+			},
+			{
+				"name": "LU_Alert_Info",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderStoredProcedureName": "[DIF].[GetAlertInfo]",
+						"storedProcedureParameters": {
+							"ProjectName": {
+								"type": "String",
+								"value": {
+									"value": "@pipeline().parameters.ProjectName",
+									"type": "Expression"
+								}
+							}
+						},
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_Misc_CoreMetaDB",
+						"type": "DatasetReference"
+					}
+				}
+			},
+			{
+				"name": "Set AlertTo Variable",
+				"type": "SetVariable",
+				"dependsOn": [
+					{
+						"activity": "LU_Alert_Info",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"variableName": "AlertToValue",
+					"value": {
+						"value": "@if(equals(pipeline().parameters.EmailTo,''),activity('LU_Alert_Info').output.value[0].AlertRecipient,pipeline().parameters.EmailTo)",
+						"type": "Expression"
+					}
+				}
+			},
+			{
+				"name": "LogErrorMessage",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "Set AlertTo Variable",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[error].[AddErrorMessage]",
+					"storedProcedureParameters": {
+						"ErrorMessage": {
+							"value": {
+								"value": "@pipeline().parameters.ErrorMessage",
+								"type": "Expression"
+							},
+							"type": "String"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_DIF_Metadata",
+					"type": "LinkedServiceReference"
+				}
+			}
+		],
+		"parameters": {
+			"EmailTo": {
+				"type": "string",
+				"defaultValue": "mark.swiderski@key2consulting.com"
+			},
+			"ProjectName": {
+				"type": "string",
+				"defaultValue": "No project set"
+			},
+			"Subject": {
+				"type": "string",
+				"defaultValue": "No subject set"
+			},
+			"ErrorMessage": {
+				"type": "string",
+				"defaultValue": "No message set"
+			}
+		},
+		"variables": {
+			"AlertToValue": {
+				"type": "String"
+			}
+		},
+		"folder": {
+			"name": "DIF Common"
+		},
+		"annotations": [],
+		"lastPublishTime": "2023-08-16T18:07:10Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

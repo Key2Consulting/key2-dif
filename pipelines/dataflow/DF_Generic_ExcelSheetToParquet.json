@@ -1,0 +1,70 @@
+{
+	"name": "DF_Generic_ExcelSheetToParquet",
+	"properties": {
+		"folder": {
+			"name": "DIF"
+		},
+		"type": "MappingDataFlow",
+		"typeProperties": {
+			"sources": [
+				{
+					"dataset": {
+						"referenceName": "DS_Misc_CoreMetaDB",
+						"type": "DatasetReference"
+					},
+					"name": "sourceMetadata"
+				},
+				{
+					"dataset": {
+						"referenceName": "DS_ADLS_Excel_Generic_NoCompression",
+						"type": "DatasetReference"
+					},
+					"name": "sourceDataset"
+				}
+			],
+			"sinks": [
+				{
+					"dataset": {
+						"referenceName": "DS_ADLS_Generic",
+						"type": "DatasetReference"
+					},
+					"name": "sinkParquet"
+				}
+			],
+			"transformations": [
+				{
+					"name": "unionMetadataWithDataset"
+				}
+			],
+			"scriptLines": [
+				"parameters{",
+				"     SingleFileName as string,",
+				"     DataTaskKey as integer",
+				"}",
+				"source(allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     isolationLevel: 'READ_UNCOMMITTED',",
+				"     inputs:['@DITaskKey' -> ($DataTaskKey)],",
+				"     procedureName: 'GetExcelFileSheetHeaderRowOverride',",
+				"     schemaName: 'DIF',",
+				"     resultSet: true,",
+				"     format: 'procedure') ~> sourceMetadata",
+				"source(allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     ignoreNoFilesFound: false) ~> sourceDataset",
+				"sourceMetadata, sourceDataset union(byName: false,",
+				"     partitionBy('hash', 1))~> unionMetadataWithDataset",
+				"unionMetadataWithDataset sink(allowSchemaDrift: true,",
+				"     validateSchema: false,",
+				"     format: 'parquet',",
+				"     partitionFileNames:[($SingleFileName)],",
+				"     umask: 0022,",
+				"     preCommands: [],",
+				"     postCommands: [],",
+				"     skipDuplicateMapInputs: true,",
+				"     skipDuplicateMapOutputs: true,",
+				"     partitionBy('hash', 1)) ~> sinkParquet"
+			]
+		}
+	}
+}

@@ -1,0 +1,583 @@
+{
+	"name": "PL_DIF_Lakehouse_Ingestion",
+	"properties": {
+		"activities": [
+			{
+				"name": "Start Pipeline Run",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[DIF].[StartPipelineRun]",
+					"storedProcedureParameters": {
+						"PipelineFullName": {
+							"value": {
+								"value": "@pipeline().Pipeline",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"PipelineRunID": {
+							"value": {
+								"value": "@pipeline().RunId",
+								"type": "Expression"
+							},
+							"type": "String"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_DIF_Metadata",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "End Pipeline Run",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "If Full Then Incremental LoadType",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[DIF].[EndPipelineRun]",
+					"storedProcedureParameters": {
+						"PipelineFullName": {
+							"value": {
+								"value": "@pipeline().Pipeline",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"PipelineRunID": {
+							"value": {
+								"value": "@pipeline().RunId",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"PipelineStatus": {
+							"value": "Succeeded",
+							"type": "String"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_DIF_Metadata",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "If Multiple Sources",
+				"type": "IfCondition",
+				"dependsOn": [
+					{
+						"activity": "Get Lakehouse Target Details",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"expression": {
+						"value": "@equals(activity('Get Lakehouse Target Details').output.firstRow.SourceDatasetName, 'Multiple Sources')",
+						"type": "Expression"
+					},
+					"ifTrueActivities": [
+						{
+							"name": "Dynamically Invoke Notebook",
+							"type": "DatabricksNotebook",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.04:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 600,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"notebookPath": {
+									"value": "@activity('Get Lakehouse Target Details').output.firstRow.NotebookPath",
+									"type": "Expression"
+								},
+								"baseParameters": {
+									"loadType": {
+										"value": "@activity('Get Lakehouse Target Details').output.firstRow.LakehouseLoadType",
+										"type": "Expression"
+									},
+									"lakehouseMountPoint": {
+										"value": "@activity('Get Lakehouse Target Details').output.firstRow.LakehouseMountPoint",
+										"type": "Expression"
+									},
+									"lakehouseFolder": {
+										"value": "@activity('Get Lakehouse Target Details').output.firstRow.LakehouseFolder",
+										"type": "Expression"
+									},
+									"targetSchema": {
+										"value": "@activity('Get Lakehouse Target Details').output.firstRow.LakehouseTargetSchema",
+										"type": "Expression"
+									},
+									"targetTable": {
+										"value": "@activity('Get Lakehouse Target Details').output.firstRow.LakehouseTargetTable",
+										"type": "Expression"
+									},
+									"PipelineRunId": {
+										"value": "@pipeline().RunId",
+										"type": "Expression"
+									},
+									"targetAzureSQLHost": {
+										"value": "@activity('Get Lakehouse Target Details').output.firstRow.TargetAzureSQLHost",
+										"type": "Expression"
+									},
+									"targetAzureSQLDB": {
+										"value": "@activity('Get Lakehouse Target Details').output.firstRow.TargetAzureSQLDB",
+										"type": "Expression"
+									},
+									"targetAzureSQLSchema": {
+										"value": "@activity('Get Lakehouse Target Details').output.firstRow.TargetAzureSQLSchema",
+										"type": "Expression"
+									},
+									"targetAzureSQLTable": {
+										"value": "@activity('Get Lakehouse Target Details').output.firstRow.TargetAzureSQLTable",
+										"type": "Expression"
+									},
+									"targetAzureSQLUserID": {
+										"value": "@activity('Get Lakehouse Target Details').output.firstRow.TargetAzureSQLUserID",
+										"type": "Expression"
+									},
+									"targetAzureSQLSecretName": {
+										"value": "@activity('Get Lakehouse Target Details').output.firstRow.TargetAzureSQLSecretName",
+										"type": "Expression"
+									},
+									"scope": "kv-key2demo-dev-eus-001",
+									"waterMarkLogic": {
+										"value": "@activity('Get Lakehouse Target Details').output.firstRow.DITaskWaterMarkLogic",
+										"type": "Expression"
+									},
+									"maxWaterMark": {
+										"value": "@activity('Get Lakehouse Target Details').output.firstRow.DITaskMaxWaterMark",
+										"type": "Expression"
+									},
+									"DuplicateCheckInLakehouseTarget": {
+										"value": "@activity('Get Lakehouse Target Details').output.firstRow.DuplicateCheckInLakehouseTarget",
+										"type": "Expression"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_Core_DataBricks_Pool",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Add Pipeline Activity for NB Execution",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "Fetch Notebook Name",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[DIF].[AddPipelineActivity]",
+								"storedProcedureParameters": {
+									"DITaskKey": {
+										"value": {
+											"value": "@pipeline().parameters.DIRelatedTaskKey",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									},
+									"PipelineActivityEndDateTime": {
+										"value": {
+											"value": "@split(activity('Dynamically Invoke Notebook').output.runOutput,'|')[0]",
+											"type": "Expression"
+										},
+										"type": "DateTime"
+									},
+									"PipelineActivityName": {
+										"value": {
+											"value": "@concat(\n    pipeline().Pipeline,\n    '.',\n    variables('InvokedNotebook')\n)",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineActivityRunID": {
+										"value": {
+											"value": "@activity('Dynamically Invoke Notebook').ActivityRunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineActivityStartDateTime": {
+										"value": {
+											"value": "@split(activity('Dynamically Invoke Notebook').output.runOutput,'|')[5]\n",
+											"type": "Expression"
+										},
+										"type": "DateTime"
+									},
+									"PipelineActivityType": {
+										"value": {
+											"value": "LakehouseProcessing",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineFullName": {
+										"value": {
+											"value": "@pipeline().Pipeline",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineRunID": {
+										"value": {
+											"value": "@pipeline().RunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_DIF_Metadata",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Add result value for NB Execution",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "Add Pipeline Activity for NB Execution",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[DIF].[AddPipelineResultMultiple]",
+								"storedProcedureParameters": {
+									"PipelineActivityRunID": {
+										"value": {
+											"value": "@activity('Dynamically Invoke Notebook').ActivityRunId\n\n",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineResult": {
+										"value": {
+											"value": "@concat(\n\t'SinkPath|',split(activity('Dynamically Invoke Notebook').output.runOutput,'|')[1],\n\t';RowsInserted|',split(activity('Dynamically Invoke Notebook').output.runOutput,'|')[2],\n\t';RowsUpdated|',split(activity('Dynamically Invoke Notebook').output.runOutput,'|')[3],\n\t';RowsDeleted|',split(activity('Dynamically Invoke Notebook').output.runOutput,'|')[4],\n\t';executionStatus|',split(activity('Dynamically Invoke Notebook').output.runOutput,'|')[7],\n\t';LoadType|',activity('Get Lakehouse Target Details').output.firstRow.LakeHouseLoadType\n)",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineRunID": {
+										"value": {
+											"value": "@pipeline().RunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_DIF_Metadata",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Fetch Notebook Name",
+							"type": "SetVariable",
+							"dependsOn": [
+								{
+									"activity": "Dynamically Invoke Notebook",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "InvokedNotebook",
+								"value": {
+									"value": "@split(activity('Dynamically Invoke Notebook').output.runOutput,'|')[6]",
+									"type": "Expression"
+								}
+							}
+						},
+						{
+							"name": "Set DITask WaterMark",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "Add result value for NB Execution",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[DIF].[UpdateMaxHighWaterMark]",
+								"storedProcedureParameters": {
+									"DITaskKey": {
+										"value": {
+											"value": "@pipeline().parameters.DITaskKey",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									},
+									"MaxHighWaterMark": {
+										"value": {
+											"value": "@split(activity('Dynamically Invoke Notebook').output.runOutput,'|')[8]",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_DIF_Metadata",
+								"type": "LinkedServiceReference"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Lk Metadata database info",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "Start Pipeline Run",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.00:02:00",
+					"retry": 2,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": "select @@SERVERNAME + '.database.windows.net' as MedataDataServer, db_name() as MetaDataDatabase ,  system_user as UserID",
+						"queryTimeout": "00:01:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_Misc_CoreMetaDB",
+						"type": "DatasetReference"
+					}
+				}
+			},
+			{
+				"name": "Get DataBrricksNodeInfo",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "Lk Metadata database info",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.00:10:00",
+					"retry": 1,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderStoredProcedureName": "[DIF].[GetDataBricksInfo]",
+						"storedProcedureParameters": {
+							"SourceRowCount": {
+								"type": "Int64",
+								"value": {
+									"value": "@pipeline().parameters.SourceRowCount",
+									"type": "Expression"
+								}
+							}
+						},
+						"queryTimeout": "00:09:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_Misc_CoreMetaDB",
+						"type": "DatasetReference"
+					}
+				}
+			},
+			{
+				"name": "If Full Then Incremental LoadType",
+				"type": "IfCondition",
+				"dependsOn": [
+					{
+						"activity": "If Multiple Sources",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"expression": {
+						"value": "@equals(activity('Get Lakehouse Target Details').output.firstRow.LakeHouseLoadType,'Full then Incremental')",
+						"type": "Expression"
+					},
+					"ifTrueActivities": [
+						{
+							"name": "Update Load Type to Incremental",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[DIF].[UpdateDITaskLoadType]",
+								"storedProcedureParameters": {
+									"DITaskKey": {
+										"value": {
+											"value": "@pipeline().parameters.DITaskKey",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									},
+									"LoadType": {
+										"value": "Incremental",
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_DIF_Metadata",
+								"type": "LinkedServiceReference"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Get Lakehouse Target Details",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "Get DataBrricksNodeInfo",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": {
+							"value": "SELECT  \n\tDITaskKey,\n\tRelatedDIGroupTaskKey,\n\tSourceDatasetKey,\n\tSourceDatasetName,\n\tDestinationDatasetKey,\n\tLakeHouseLoadType,\n\tLakehouseRepositoryName,\n\tLakehouseMountPoint,\n\tLakehouseTargetSchema,\n\tLakehouseTargetTable,\n\tLakehouseFolder,\n\tDITaskWaterMarkLogic,\n\tDITaskMaxWaterMark,\n\tNotebookPath,\n\tISNULL(TargetAzureSQLHost, '') AS TargetAzureSQLHost,\n\tISNULL(TargetAzureSQLDB, '') AS TargetAzureSQLDB,\n\tISNULL(TargetAzureSQLSchema, '') AS TargetAzureSQLSchema,\n\tISNULL(TargetAzureSQLTable, '') AS TargetAzureSQLTable,\n\tISNULL(TargetAzureSQLUserID, '') AS TargetAzureSQLUserID,\n\tISNULL(TargetAzureSQLSecretName, '') AS TargetAzureSQLSecretName,\n\tDuplicateCheckInLakehouseTarget\nFROM\n    [DIF].[udf_GetDITaskLakehouseTargetDetails](@{pipeline().parameters.DITaskKey})",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_Misc_CoreMetaDB",
+						"type": "DatasetReference"
+					}
+				}
+			}
+		],
+		"parameters": {
+			"DITaskKey": {
+				"type": "int"
+			},
+			"DIRelatedTaskKey": {
+				"type": "int"
+			},
+			"SourceRowCount": {
+				"type": "int"
+			}
+		},
+		"variables": {
+			"InvokedNotebook": {
+				"type": "String"
+			}
+		},
+		"folder": {
+			"name": "DIF Lakehouse"
+		},
+		"annotations": [],
+		"lastPublishTime": "2023-09-06T13:24:58Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

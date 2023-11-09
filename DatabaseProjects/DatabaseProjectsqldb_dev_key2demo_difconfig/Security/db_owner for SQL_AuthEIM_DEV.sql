@@ -1,0 +1,5 @@
+ALTER ROLE [db_owner] ADD MEMBER [SQL_AuthEIM_DEV];
+
+
+GO
+

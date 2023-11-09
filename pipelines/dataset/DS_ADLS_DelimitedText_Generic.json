@@ -1,0 +1,123 @@
+{
+	"name": "DS_ADLS_DelimitedText_Generic",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "LS_DIF_ADLS_Generic",
+			"type": "LinkedServiceReference",
+			"parameters": {
+				"DataLake_URL": {
+					"value": "@dataset().DataLake_URL",
+					"type": "Expression"
+				},
+				"DataLake_SecretName": {
+					"value": "@dataset().DataLake_SecretName",
+					"type": "Expression"
+				}
+			}
+		},
+		"parameters": {
+			"DataLake_URL": {
+				"type": "string"
+			},
+			"DataLake_SecretName": {
+				"type": "string"
+			},
+			"DataLake_Container": {
+				"type": "string"
+			},
+			"DataLake_Folder": {
+				"type": "string"
+			},
+			"DataLake_FileName": {
+				"type": "string"
+			},
+			"DataLake_FileColumnDelimiter": {
+				"type": "string"
+			},
+			"DataLake_FileRowDelimiter": {
+				"type": "string"
+			},
+			"DataLake_FileQuoteCharacter": {
+				"type": "string"
+			},
+			"DataLake_FileFirstRowAsHeader": {
+				"type": "bool"
+			},
+			"DataLake_FileCompressionType": {
+				"type": "string"
+			},
+			"DataLake_FileCompressionLevel": {
+				"type": "string"
+			},
+			"DataLake_FileEncoding": {
+				"type": "string"
+			},
+			"DataLake_FileEscapeCharacter": {
+				"type": "string"
+			},
+			"DataLake_FileNULLValue": {
+				"type": "string"
+			}
+		},
+		"folder": {
+			"name": "DIF"
+		},
+		"annotations": [],
+		"type": "DelimitedText",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobFSLocation",
+				"fileName": {
+					"value": "@dataset().DataLake_FileName",
+					"type": "Expression"
+				},
+				"folderPath": {
+					"value": "@dataset().DataLake_Folder",
+					"type": "Expression"
+				},
+				"fileSystem": {
+					"value": "@dataset().DataLake_Container",
+					"type": "Expression"
+				}
+			},
+			"columnDelimiter": {
+				"value": "@dataset().DataLake_FileColumnDelimiter",
+				"type": "Expression"
+			},
+			"rowDelimiter": {
+				"value": "@dataset().DataLake_FileRowDelimiter",
+				"type": "Expression"
+			},
+			"compressionCodec": {
+				"value": "@dataset().DataLake_FileCompressionType",
+				"type": "Expression"
+			},
+			"compressionLevel": {
+				"value": "@dataset().DataLake_FileCompressionLevel",
+				"type": "Expression"
+			},
+			"encodingName": {
+				"value": "@dataset().DataLake_FileEncoding",
+				"type": "Expression"
+			},
+			"escapeChar": {
+				"value": "@dataset().DataLake_FileEscapeCharacter",
+				"type": "Expression"
+			},
+			"firstRowAsHeader": {
+				"value": "@dataset().DataLake_FileFirstRowAsHeader",
+				"type": "Expression"
+			},
+			"nullValue": {
+				"value": "@dataset().DataLake_FileNULLValue",
+				"type": "Expression"
+			},
+			"quoteChar": {
+				"value": "@dataset().DataLake_FileQuoteCharacter",
+				"type": "Expression"
+			}
+		},
+		"schema": []
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

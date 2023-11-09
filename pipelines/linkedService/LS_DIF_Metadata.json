@@ -1,0 +1,20 @@
+{
+	"name": "LS_DIF_Metadata",
+	"type": "Microsoft.DataFactory/factories/linkedservices",
+	"properties": {
+		"type": "AzureSqlDatabase",
+		"typeProperties": {
+			"connectionString": "Integrated Security=False;Encrypt=True;Connection Timeout=30;Data Source=sql-key2demo-dev-eastus-001.database.windows.net;Initial Catalog=sqldb_dev_key2demo_difconfig;User ID=AzureSQL_Key2Demo_DEV",
+			"password": {
+				"type": "AzureKeyVaultSecret",
+				"store": {
+					"referenceName": "LS_DIF_KeyVault",
+					"type": "LinkedServiceReference"
+				},
+				"secretName": "key2demo-sql-secret-dev-az"
+			}
+		},
+		"description": "Linked Service for ETL_DIF metadata",
+		"annotations": []
+	}
+}

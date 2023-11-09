@@ -1,0 +1,91 @@
+{
+	"name": "DS_ADLS_Excel_Generic_NoCompression",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "LS_DIF_ADLS_Generic",
+			"type": "LinkedServiceReference",
+			"parameters": {
+				"DataLake_URL": {
+					"value": "@dataset().DataLake_URL",
+					"type": "Expression"
+				},
+				"DataLake_SecretName": {
+					"value": "@dataset().DataLake_SecretName",
+					"type": "Expression"
+				}
+			}
+		},
+		"parameters": {
+			"DataLake_URL": {
+				"type": "string"
+			},
+			"DataLake_SecretName": {
+				"type": "string"
+			},
+			"DataLake_Container": {
+				"type": "string"
+			},
+			"DataLake_Folder": {
+				"type": "string"
+			},
+			"DataLake_FileName": {
+				"type": "string"
+			},
+			"DataLake_FileFirstRowAsHeader": {
+				"type": "bool"
+			},
+			"DataLake_FileCompressionType": {
+				"type": "string"
+			},
+			"DataLake_FileNULLValue": {
+				"type": "string"
+			},
+			"DataLake_FileWorksheetName": {
+				"type": "string"
+			},
+			"DataLake_FileRange": {
+				"type": "string"
+			}
+		},
+		"folder": {
+			"name": "DIF"
+		},
+		"annotations": [],
+		"type": "Excel",
+		"typeProperties": {
+			"sheetName": {
+				"value": "@dataset().DataLake_FileWorksheetName",
+				"type": "Expression"
+			},
+			"location": {
+				"type": "AzureBlobFSLocation",
+				"fileName": {
+					"value": "@dataset().DataLake_FileName",
+					"type": "Expression"
+				},
+				"folderPath": {
+					"value": "@dataset().DataLake_Folder",
+					"type": "Expression"
+				},
+				"fileSystem": {
+					"value": "@dataset().DataLake_Container",
+					"type": "Expression"
+				}
+			},
+			"range": {
+				"value": "@dataset().DataLake_FileRange",
+				"type": "Expression"
+			},
+			"firstRowAsHeader": {
+				"value": "@dataset().DataLake_FileFirstRowAsHeader",
+				"type": "Expression"
+			},
+			"nullValue": {
+				"value": "@dataset().DataLake_FileNULLValue",
+				"type": "Expression"
+			}
+		},
+		"schema": []
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

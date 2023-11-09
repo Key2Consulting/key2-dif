@@ -1,0 +1,25 @@
+{
+	"name": "adf-key2demo-dev-eastus-001",
+	"properties": {
+		"globalParameters": {
+			"SubscriptionID": {
+				"type": "string",
+				"value": "9c737f1b-8965-43e1-ab39-4074136b352d"
+			},
+			"ResourceGroupName": {
+				"type": "string",
+				"value": "rg-key2demo-dev-eastus-001"
+			},
+			"DataFactoryName": {
+				"type": "string",
+				"value": "adf-key2demo-dev-eastus-001"
+			}
+		}
+	},
+	"location": "eastus",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "cbd84628-cb42-4a4a-90bc-f937543e0dc5",
+		"tenantId": "94701cbd-b5e3-4ca1-ad7a-5d6e3a5f6cdf"
+	}
+}

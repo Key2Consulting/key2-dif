@@ -1,0 +1,1220 @@
+{
+	"name": "PL_DIF_SQLServer_TableCopy",
+	"properties": {
+		"activities": [
+			{
+				"name": "LU_LoadQuery_List",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "If LU_Src_Audit",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderStoredProcedureName": "[DIF].[GetDITaskQueryList]",
+						"storedProcedureParameters": {
+							"DITaskKey": {
+								"type": "Int32",
+								"value": {
+									"value": "@pipeline().parameters.DataTaskKey",
+									"type": "Expression"
+								}
+							},
+							"MaxPartitionValue": {
+								"type": "String",
+								"value": {
+									"value": "@variables('MaxPartitionValue')",
+									"type": "Expression"
+								}
+							},
+							"MaxWaterMark": {
+								"type": "String",
+								"value": {
+									"value": "@variables('MaxWaterMark')",
+									"type": "Expression"
+								}
+							},
+							"MinPartitionValue": {
+								"type": "String",
+								"value": {
+									"value": "@variables('MinPartitionValue')",
+									"type": "Expression"
+								}
+							}
+						},
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_Misc_CoreMetaDB",
+						"type": "DatasetReference"
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "FOREACH_LoadQuery",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "LU_LoadQuery_List",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('LU_LoadQuery_LIST').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "Copy Data From SQL to ADLS Full Inc",
+							"type": "Copy",
+							"dependsOn": [
+								{
+									"activity": "If Target Folder Exists",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "SqlServerSource",
+									"sqlReaderQuery": {
+										"value": "@item().LoadSQL",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"sink": {
+									"type": "ParquetSink",
+									"storeSettings": {
+										"type": "AzureBlobFSWriteSettings"
+									},
+									"formatSettings": {
+										"type": "ParquetWriteSettings"
+									}
+								},
+								"enableStaging": false,
+								"translator": {
+									"type": "TabularTranslator",
+									"typeConversion": true,
+									"typeConversionSettings": {
+										"allowDataTruncation": true,
+										"treatBooleanAsNumber": false
+									}
+								}
+							},
+							"inputs": [
+								{
+									"referenceName": "DS_SQL_Generic_WindowsAuth",
+									"type": "DatasetReference",
+									"parameters": {
+										"SQL_ServerName": {
+											"value": "@{pipeline().parameters.SQL_ServerName}",
+											"type": "Expression"
+										},
+										"SQL_DatabaseName": {
+											"value": "@{pipeline().parameters.SQL_DatabaseName}",
+											"type": "Expression"
+										},
+										"SQL_UserName": {
+											"value": "@{pipeline().parameters.SQL_UserName}",
+											"type": "Expression"
+										},
+										"SQL_SecretName": {
+											"value": "@{pipeline().parameters.SQL_SecretName}",
+											"type": "Expression"
+										}
+									}
+								}
+							],
+							"outputs": [
+								{
+									"referenceName": "DS_ADLS_Generic",
+									"type": "DatasetReference",
+									"parameters": {
+										"DataLake_URL": {
+											"value": "@{pipeline().parameters.DataLake_URL}",
+											"type": "Expression"
+										},
+										"DataLake_SecretName": {
+											"value": "@{pipeline().parameters.DataLake_SecretName}",
+											"type": "Expression"
+										},
+										"DataLake_Container": {
+											"value": "@{pipeline().parameters.DataLake_Container}",
+											"type": "Expression"
+										},
+										"DataLake_Folder": {
+											"value": "@{item().LoadFolder}",
+											"type": "Expression"
+										},
+										"DataLake_FileName": {
+											"value": "@{item().IngestionFileName}",
+											"type": "Expression"
+										}
+									}
+								}
+							]
+						},
+						{
+							"name": "Add Pipeline Activity for Copy Data Task",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "If File Has No Records",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[DIF].[AddPipelineActivity]",
+								"storedProcedureParameters": {
+									"DITaskKey": {
+										"value": {
+											"value": "@pipeline().parameters.DataTaskKey",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									},
+									"PipelineActivityEndDateTime": {
+										"value": {
+											"value": "@activity('Copy Data From SQL to ADLS Full Inc').ExecutionEndTime",
+											"type": "Expression"
+										},
+										"type": "DateTime"
+									},
+									"PipelineActivityName": {
+										"value": {
+											"value": "@concat(pipeline().Pipeline,'.FOREACH_LoadQuery')",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineActivityRunID": {
+										"value": {
+											"value": "@activity('Copy Data From SQL to ADLS Full Inc').ActivityRunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineActivityStartDateTime": {
+										"value": {
+											"value": "@activity('Copy Data From SQL to ADLS Full Inc').ExecutionStartTime",
+											"type": "Expression"
+										},
+										"type": "DateTime"
+									},
+									"PipelineActivityType": {
+										"value": {
+											"value": "For Each",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineFullName": {
+										"value": {
+											"value": "@pipeline().Pipeline",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineRunID": {
+										"value": {
+											"value": "@pipeline().RunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_DIF_Metadata",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Add Result Value for SinkPath",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "Add Pipeline Activity for Copy Data Task",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[DIF].[AddPipelineResultMultiple]",
+								"storedProcedureParameters": {
+									"PipelineActivityRunID": {
+										"value": {
+											"value": "@activity('Copy Data From SQL to ADLS Full Inc').ActivityRunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineResult": {
+										"value": {
+											"value": "@concat('SinkPath|',item().LoadFolder,';RowsCopied|',activity('Copy Data From SQL to ADLS Full Inc').output.rowsCopied,';SinkFileName|',item().IngestionFileName,';LoadType|',pipeline().parameters.LoadType,';SourceQuery|',item().LoadSQL)",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineRunID": {
+										"value": {
+											"value": "@pipeline().RunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_DIF_Metadata",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "If File Has No Records",
+							"type": "IfCondition",
+							"dependsOn": [
+								{
+									"activity": "Copy Data From SQL to ADLS Full Inc",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"userProperties": [],
+							"typeProperties": {
+								"expression": {
+									"value": "@equals(activity('Copy Data From SQL to ADLS Full Inc').output.rowsCopied,0)",
+									"type": "Expression"
+								},
+								"ifTrueActivities": [
+									{
+										"name": "Remove Empty File",
+										"type": "Delete",
+										"dependsOn": [],
+										"policy": {
+											"timeout": "7.00:00:00",
+											"retry": 0,
+											"retryIntervalInSeconds": 30,
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"typeProperties": {
+											"dataset": {
+												"referenceName": "DS_ADLS_Generic",
+												"type": "DatasetReference",
+												"parameters": {
+													"DataLake_URL": {
+														"value": "@{pipeline().parameters.DataLake_URL}",
+														"type": "Expression"
+													},
+													"DataLake_SecretName": {
+														"value": "@pipeline().parameters.DataLake_SecretName",
+														"type": "Expression"
+													},
+													"DataLake_Container": {
+														"value": "@pipeline().parameters.DataLake_Container",
+														"type": "Expression"
+													},
+													"DataLake_Folder": "@{item().LoadFolder}",
+													"DataLake_FileName": {
+														"value": "@{item().IngestionFileName}",
+														"type": "Expression"
+													}
+												}
+											},
+											"enableLogging": false,
+											"storeSettings": {
+												"type": "AzureBlobFSReadSettings",
+												"recursive": true,
+												"enablePartitionDiscovery": false
+											}
+										}
+									}
+								]
+							}
+						},
+						{
+							"name": "Get Metadata For Target Folder",
+							"type": "GetMetadata",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"dataset": {
+									"referenceName": "DS_ADLS_Generic_Folder",
+									"type": "DatasetReference",
+									"parameters": {
+										"DataLake_URL": {
+											"value": "@pipeline().parameters.DataLake_URL",
+											"type": "Expression"
+										},
+										"DataLake_SecretName": {
+											"value": "@pipeline().parameters.DataLake_SecretName",
+											"type": "Expression"
+										},
+										"DataLake_Container": {
+											"value": "@pipeline().parameters.DataLake_Container",
+											"type": "Expression"
+										},
+										"DataLake_Folder": {
+											"value": "@{item().LoadFolder}",
+											"type": "Expression"
+										}
+									}
+								},
+								"fieldList": [
+									"exists"
+								],
+								"storeSettings": {
+									"type": "AzureBlobFSReadSettings",
+									"recursive": true,
+									"enablePartitionDiscovery": false
+								}
+							}
+						},
+						{
+							"name": "If Target Folder Exists",
+							"type": "IfCondition",
+							"dependsOn": [
+								{
+									"activity": "Get Metadata For Target Folder",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"userProperties": [],
+							"typeProperties": {
+								"expression": {
+									"value": "@equals(\n    activity('Get Metadata For Target Folder').output.exists,\n    true\n)",
+									"type": "Expression"
+								},
+								"ifTrueActivities": [
+									{
+										"name": "Remove Existing Files in Folder",
+										"type": "Delete",
+										"dependsOn": [],
+										"policy": {
+											"timeout": "7.00:00:00",
+											"retry": 0,
+											"retryIntervalInSeconds": 30,
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"typeProperties": {
+											"dataset": {
+												"referenceName": "DS_ADLS_Generic",
+												"type": "DatasetReference",
+												"parameters": {
+													"DataLake_URL": {
+														"value": "@pipeline().parameters.DataLake_URL",
+														"type": "Expression"
+													},
+													"DataLake_SecretName": {
+														"value": "@pipeline().parameters.DataLake_SecretName",
+														"type": "Expression"
+													},
+													"DataLake_Container": {
+														"value": "@pipeline().parameters.DataLake_Container",
+														"type": "Expression"
+													},
+													"DataLake_Folder": {
+														"value": "@{item().LoadFolder}",
+														"type": "Expression"
+													},
+													"DataLake_FileName": {
+														"value": "*.*",
+														"type": "Expression"
+													}
+												}
+											},
+											"enableLogging": false,
+											"storeSettings": {
+												"type": "AzureBlobFSReadSettings",
+												"recursive": false,
+												"wildcardFileName": {
+													"value": "*.*",
+													"type": "Expression"
+												},
+												"enablePartitionDiscovery": false
+											}
+										}
+									}
+								]
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Start Pipeline Run",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[DIF].[StartPipelineRun]",
+					"storedProcedureParameters": {
+						"PipelineFullName": {
+							"value": {
+								"value": "@pipeline().Pipeline",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"PipelineRunID": {
+							"value": {
+								"value": "@pipeline().RunId",
+								"type": "Expression"
+							},
+							"type": "String"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_DIF_Metadata",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "End Pipeline Run",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "If Check for Related Pipeline Execution",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[DIF].[EndPipelineRun]",
+					"storedProcedureParameters": {
+						"PipelineFullName": {
+							"value": {
+								"value": "@pipeline().Pipeline",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"PipelineRunID": {
+							"value": {
+								"value": "@pipeline().RunId",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"PipelineStatus": {
+							"value": "Succeeded",
+							"type": "String"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_DIF_Metadata",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "If Incremental LoadType",
+				"type": "IfCondition",
+				"dependsOn": [
+					{
+						"activity": "Start Pipeline Run",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"expression": {
+						"value": "@or(equals(pipeline().parameters.LoadType,'Incremental'),equals(pipeline().parameters.LoadType,'Full then Incremental'))",
+						"type": "Expression"
+					},
+					"ifTrueActivities": [
+						{
+							"name": "LU_Source_MaxWaterMark",
+							"type": "Lookup",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "SqlServerSource",
+									"sqlReaderQuery": {
+										"value": "@pipeline().parameters.SourceWaterMarkQuery",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DS_SQL_Generic_WindowsAuth",
+									"type": "DatasetReference",
+									"parameters": {
+										"SQL_ServerName": {
+											"value": "@{pipeline().parameters.SQL_ServerName}",
+											"type": "Expression"
+										},
+										"SQL_DatabaseName": {
+											"value": "@pipeline().parameters.SQL_DatabaseName",
+											"type": "Expression"
+										},
+										"SQL_UserName": {
+											"value": "@pipeline().parameters.SQL_UserName",
+											"type": "Expression"
+										},
+										"SQL_SecretName": {
+											"value": "@pipeline().parameters.SQL_SecretName",
+											"type": "Expression"
+										}
+									}
+								}
+							}
+						},
+						{
+							"name": "Set MaxWaterMark",
+							"type": "SetVariable",
+							"dependsOn": [
+								{
+									"activity": "LU_Source_MaxWaterMark",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "MaxWaterMark",
+								"value": {
+									"value": "@concat('',activity('LU_Source_MaxWaterMark').output.FirstRow.MaxWaterMark)",
+									"type": "Expression"
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "If Incremental Load Type - Post",
+				"type": "IfCondition",
+				"dependsOn": [
+					{
+						"activity": "FOREACH_LoadQuery",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"expression": {
+						"value": "@or(equals(pipeline().parameters.LoadType,'Incremental'),equals(pipeline().parameters.LoadType,'Full then Incremental'))",
+						"type": "Expression"
+					},
+					"ifTrueActivities": [
+						{
+							"name": "Set DITask WaterMark",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[DIF].[UpdateMaxHighWaterMark]",
+								"storedProcedureParameters": {
+									"DITaskKey": {
+										"value": {
+											"value": "@pipeline().parameters.DataTaskKey",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									},
+									"MaxHighWaterMark": {
+										"value": {
+											"value": "@variables('MaxWaterMark')",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_DIF_Metadata",
+								"type": "LinkedServiceReference"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "If Check for Full then Incremental LoadType",
+				"description": "Check to see if the current \"Full then Incremental\" LoadType needs to be updated to \"Incremental\"",
+				"type": "IfCondition",
+				"dependsOn": [
+					{
+						"activity": "If Incremental Load Type - Post",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"expression": {
+						"value": "@equals(pipeline().parameters.LoadType,'Full then Incremental')",
+						"type": "Expression"
+					},
+					"ifTrueActivities": [
+						{
+							"name": "Update Load Type to Incremental",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[DIF].[UpdateDITaskLoadType]",
+								"storedProcedureParameters": {
+									"DITaskKey": {
+										"value": {
+											"value": "@pipeline().parameters.DataTaskKey",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									},
+									"LoadType": {
+										"value": "Incremental",
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_DIF_Metadata",
+								"type": "LinkedServiceReference"
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "If LU_Src_Audit",
+				"type": "IfCondition",
+				"dependsOn": [
+					{
+						"activity": "If Incremental LoadType",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"expression": {
+						"value": "@not(equals(trim(pipeline().parameters.SourceAuditQuery), ''))",
+						"type": "Expression"
+					},
+					"ifTrueActivities": [
+						{
+							"name": "LU_Src_Audit",
+							"type": "Lookup",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "SqlServerSource",
+									"sqlReaderQuery": {
+										"value": "@pipeline().parameters.SourceAuditQuery",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DS_SQL_Generic_WindowsAuth",
+									"type": "DatasetReference",
+									"parameters": {
+										"SQL_ServerName": {
+											"value": "@pipeline().parameters.SQL_ServerName",
+											"type": "Expression"
+										},
+										"SQL_DatabaseName": {
+											"value": "@pipeline().parameters.SQL_DatabaseName",
+											"type": "Expression"
+										},
+										"SQL_UserName": {
+											"value": "@pipeline().parameters.SQL_UserName",
+											"type": "Expression"
+										},
+										"SQL_SecretName": {
+											"value": "@pipeline().parameters.SQL_SecretName",
+											"type": "Expression"
+										}
+									}
+								}
+							}
+						},
+						{
+							"name": "Add Pipeline Activity for LU_Src_Audit",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "LU_Src_Audit",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[DIF].[AddPipelineActivity]",
+								"storedProcedureParameters": {
+									"DITaskKey": {
+										"value": {
+											"value": "@pipeline().parameters.DataTaskKey",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									},
+									"PipelineActivityEndDateTime": {
+										"value": {
+											"value": "@activity('LU_Src_Audit').ExecutionEndTime",
+											"type": "Expression"
+										},
+										"type": "DateTime"
+									},
+									"PipelineActivityName": {
+										"value": {
+											"value": "@concat(pipeline().Pipeline,'.LU_Src_Audit')",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineActivityRunID": {
+										"value": {
+											"value": "@activity('LU_Src_Audit').ActivityRunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineActivityStartDateTime": {
+										"value": {
+											"value": "@activity('LU_Src_Audit').ExecutionStartTime",
+											"type": "Expression"
+										},
+										"type": "DateTime"
+									},
+									"PipelineActivityType": {
+										"value": {
+											"value": "Source Audit",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineFullName": {
+										"value": {
+											"value": "@pipeline().Pipeline",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineRunID": {
+										"value": {
+											"value": "@pipeline().RunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_DIF_Metadata",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Add Result Value for LU_Src_Audit_copy1",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "Add Pipeline Activity for LU_Src_Audit",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[DIF].[AddPipelineResult]",
+								"storedProcedureParameters": {
+									"PipelineActivityRunID": {
+										"value": {
+											"value": "@activity('LU_Src_Audit').ActivityRunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineResult": {
+										"value": {
+											"value": "@activity('LU_Src_Audit').output.firstRow.SrcAuditRowCount",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineResultName": {
+										"value": "SourceAuditQueryValue",
+										"type": "String"
+									},
+									"PipelineRunID": {
+										"value": {
+											"value": "@pipeline().RunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_DIF_Metadata",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Set MaxPartitionValue",
+							"type": "SetVariable",
+							"dependsOn": [
+								{
+									"activity": "Set MinPartitionValue",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "MaxPartitionValue",
+								"value": {
+									"value": "@activity('LU_Src_Audit').output.firstRow.MaxPartitionValue",
+									"type": "Expression"
+								}
+							}
+						},
+						{
+							"name": "Set MinPartitionValue",
+							"type": "SetVariable",
+							"dependsOn": [
+								{
+									"activity": "Add Result Value for LU_Src_Audit_copy1",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"variableName": "MinPartitionValue",
+								"value": {
+									"value": "@activity('LU_Src_Audit').output.firstRow.MinPartitionValue",
+									"type": "Expression"
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "If Check for Related Pipeline Execution",
+				"type": "IfCondition",
+				"dependsOn": [
+					{
+						"activity": "LU_Get_TotalRowsCopied",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"expression": {
+						"value": "@and(equals(pipeline().parameters.RelatedPipelineFullName,'PL_DIF_SQLServer_RawToRefined'),greater(int(activity('LU_Get_TotalRowsCopied').output.firstRow.TotalRowsCopied),0))",
+						"type": "Expression"
+					},
+					"ifTrueActivities": [
+						{
+							"name": "Execute RawToRefined Pipeline",
+							"type": "ExecutePipeline",
+							"dependsOn": [],
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "PL_DIF_SQLServer_RawToRefined",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": false,
+								"parameters": {
+									"DITaskKey": {
+										"value": "@pipeline().parameters.DataTaskKey",
+										"type": "Expression"
+									},
+									"DIRelatedTaskKey": {
+										"value": "@pipeline().parameters.RelatedDITaskKey",
+										"type": "Expression"
+									},
+									"SourceRowCount": {
+										"value": "@activity('LU_Src_Audit').output.firstRow.SrcAuditRowCount",
+										"type": "Expression"
+									}
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "LU_Get_TotalRowsCopied",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "If Check for Full then Incremental LoadType",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": {
+							"value": "select isNull(sum(try_cast(rslt.PipelineResultValue as bigint)),0) as TotalRowsCopied\nfrom logging.PipelineResult rslt\n\tinner join logging.PipelineRun pr\n\t\ton rslt.PipelineRunKey = pr.PipelineRunKey\n\tinner join reference.PipelineResultName prn\n\t\ton rslt.PipelineResultNameKey = prn.PipelineResultNameKey\nwhere pr.PipelineRunID = '@{pipeline().RunId}'\nand prn.PipelineResultName = 'RowsCopied'",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_Misc_CoreMetaDB",
+						"type": "DatasetReference"
+					}
+				}
+			}
+		],
+		"parameters": {
+			"SQL_ServerName": {
+				"type": "string",
+				"defaultValue": "no value set"
+			},
+			"SQL_DatabaseName": {
+				"type": "string",
+				"defaultValue": "no value set"
+			},
+			"SQL_UserName": {
+				"type": "string",
+				"defaultValue": "no value set"
+			},
+			"SQL_SecretName": {
+				"type": "string",
+				"defaultValue": "no value set"
+			},
+			"SourceDataSetNameSpace": {
+				"type": "string",
+				"defaultValue": "no value set"
+			},
+			"SourceDatasetName": {
+				"type": "string",
+				"defaultValue": "no value set"
+			},
+			"DataLake_URL": {
+				"type": "string",
+				"defaultValue": "no value set"
+			},
+			"DataLake_SecretName": {
+				"type": "string",
+				"defaultValue": "no value set"
+			},
+			"DataLake_Folder": {
+				"type": "string",
+				"defaultValue": "no value set"
+			},
+			"DataLake_Container": {
+				"type": "string",
+				"defaultValue": "no value set"
+			},
+			"SourcePartitionType": {
+				"type": "string",
+				"defaultValue": "None"
+			},
+			"DataTaskKey": {
+				"type": "int",
+				"defaultValue": 1
+			},
+			"LoadType": {
+				"type": "string",
+				"defaultValue": "Full Only"
+			},
+			"SourceWaterMarkQuery": {
+				"type": "string"
+			},
+			"RelatedDITaskKey": {
+				"type": "int",
+				"defaultValue": 1
+			},
+			"RelatedPipelineFullName": {
+				"type": "string"
+			},
+			"SourceAuditQuery": {
+				"type": "string",
+				"defaultValue": " "
+			}
+		},
+		"variables": {
+			"MaxWaterMark": {
+				"type": "String"
+			},
+			"TotalRowsCopied": {
+				"type": "String"
+			},
+			"MinPartitionValue": {
+				"type": "String"
+			},
+			"MaxPartitionValue": {
+				"type": "String"
+			}
+		},
+		"folder": {
+			"name": "DIF SQLServer"
+		},
+		"annotations": [],
+		"lastPublishTime": "2023-08-16T18:07:12Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

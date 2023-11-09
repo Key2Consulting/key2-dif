@@ -1,0 +1,46 @@
+{
+	"name": "LS_DIF_SQL_Generic_WindowsAuth",
+	"type": "Microsoft.DataFactory/factories/linkedservices",
+	"properties": {
+		"type": "SqlServer",
+		"typeProperties": {
+			"connectionString": "Integrated Security=True;Data Source=@{linkedService().SQL_ServerName};Initial Catalog=@{linkedService().SQL_DatabaseName}",
+			"userName": "@{linkedService().SQL_UserName}",
+			"password": {
+				"type": "AzureKeyVaultSecret",
+				"store": {
+					"referenceName": "LS_DIF_KeyVault",
+					"type": "LinkedServiceReference"
+				},
+				"secretName": {
+					"value": "@linkedService().SQL_SecretName",
+					"type": "Expression"
+				}
+			}
+		},
+		"connectVia": {
+			"referenceName": "shir-key2demo-dev",
+			"type": "IntegrationRuntimeReference"
+		},
+		"description": "Linked Service to connect to generic SQL Server with Windows Authentication",
+		"parameters": {
+			"SQL_ServerName": {
+				"type": "string",
+				"defaultValue": "Test_Parameter"
+			},
+			"SQL_DatabaseName": {
+				"type": "string",
+				"defaultValue": "Test_Parameter"
+			},
+			"SQL_UserName": {
+				"type": "string",
+				"defaultValue": "Test_Parameter"
+			},
+			"SQL_SecretName": {
+				"type": "string",
+				"defaultValue": "Test_Parameter"
+			}
+		},
+		"annotations": []
+	}
+}

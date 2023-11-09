@@ -1,0 +1,36 @@
+{
+	"name": "LS_DIF_AzureSQL_GenericSQLAuth",
+	"type": "Microsoft.DataFactory/factories/linkedservices",
+	"properties": {
+		"type": "AzureSqlDatabase",
+		"typeProperties": {
+			"connectionString": "Integrated Security=False;Encrypt=True;Connection Timeout=30;Data Source=@{linkedService().AzureSQL_FQDN};Initial Catalog=@{linkedService().AzureSQL_DatabaseName};User ID=@{linkedService().AzureSQL_UserName}",
+			"password": {
+				"type": "AzureKeyVaultSecret",
+				"store": {
+					"referenceName": "LS_DIF_KeyVault",
+					"type": "LinkedServiceReference"
+				},
+				"secretName": {
+					"value": "@linkedService().AzureSQL_SecretName",
+					"type": "Expression"
+				}
+			}
+		},
+		"parameters": {
+			"AzureSQL_FQDN": {
+				"type": "string"
+			},
+			"AzureSQL_DatabaseName": {
+				"type": "string"
+			},
+			"AzureSQL_UserName": {
+				"type": "string"
+			},
+			"AzureSQL_SecretName": {
+				"type": "string"
+			}
+		},
+		"annotations": []
+	}
+}

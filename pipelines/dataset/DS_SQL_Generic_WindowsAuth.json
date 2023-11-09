@@ -1,0 +1,52 @@
+{
+	"name": "DS_SQL_Generic_WindowsAuth",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "LS_DIF_SQL_Generic_WindowsAuth",
+			"type": "LinkedServiceReference",
+			"parameters": {
+				"SQL_ServerName": {
+					"value": "@dataset().SQL_ServerName",
+					"type": "Expression"
+				},
+				"SQL_DatabaseName": {
+					"value": "@dataset().SQL_DatabaseName",
+					"type": "Expression"
+				},
+				"SQL_UserName": {
+					"value": "@dataset().SQL_UserName",
+					"type": "Expression"
+				},
+				"SQL_SecretName": {
+					"value": "@dataset().SQL_SecretName",
+					"type": "Expression"
+				}
+			}
+		},
+		"parameters": {
+			"SQL_ServerName": {
+				"type": "string",
+				"defaultValue": "test"
+			},
+			"SQL_DatabaseName": {
+				"type": "string",
+				"defaultValue": "test"
+			},
+			"SQL_UserName": {
+				"type": "string",
+				"defaultValue": "test"
+			},
+			"SQL_SecretName": {
+				"type": "string",
+				"defaultValue": "test"
+			}
+		},
+		"folder": {
+			"name": "DIF"
+		},
+		"annotations": [],
+		"type": "SqlServerTable",
+		"schema": []
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

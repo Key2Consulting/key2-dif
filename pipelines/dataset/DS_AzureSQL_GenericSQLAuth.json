@@ -1,0 +1,48 @@
+{
+	"name": "DS_AzureSQL_GenericSQLAuth",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "LS_DIF_AzureSQL_GenericSQLAuth",
+			"type": "LinkedServiceReference",
+			"parameters": {
+				"AzureSQL_FQDN": {
+					"value": "@dataset().AzureSQL_FQDN",
+					"type": "Expression"
+				},
+				"AzureSQL_DatabaseName": {
+					"value": "@dataset().AzureSQL_DatabaseName",
+					"type": "Expression"
+				},
+				"AzureSQL_UserName": {
+					"value": "@dataset().AzureSQL_UserName",
+					"type": "Expression"
+				},
+				"AzureSQL_SecretName": {
+					"value": "@dataset().AzureSQL_SecretName",
+					"type": "Expression"
+				}
+			}
+		},
+		"parameters": {
+			"AzureSQL_FQDN": {
+				"type": "string"
+			},
+			"AzureSQL_DatabaseName": {
+				"type": "string"
+			},
+			"AzureSQL_UserName": {
+				"type": "string"
+			},
+			"AzureSQL_SecretName": {
+				"type": "string"
+			}
+		},
+		"folder": {
+			"name": "DIF"
+		},
+		"annotations": [],
+		"type": "AzureSqlTable",
+		"schema": []
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

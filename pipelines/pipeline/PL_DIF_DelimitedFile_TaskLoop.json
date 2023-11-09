@@ -1,0 +1,253 @@
+{
+	"name": "PL_DIF_DelimitedFile_TaskLoop",
+	"properties": {
+		"activities": [
+			{
+				"name": "Start Pipeline Run",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[DIF].[StartPipelineRun]",
+					"storedProcedureParameters": {
+						"PipelineFullName": {
+							"value": {
+								"value": "@pipeline().Pipeline",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"PipelineRunID": {
+							"value": {
+								"value": "@pipeline().RunId",
+								"type": "Expression"
+							},
+							"type": "String"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_DIF_Metadata",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "Get DI Task Info",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "Start Pipeline Run",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderStoredProcedureName": "[DIF].[GetDITaskLoadDetailByDIGroupPriorityOrder]",
+						"storedProcedureParameters": {
+							"DIGroupKey": {
+								"type": "Int16",
+								"value": {
+									"value": "@pipeline().parameters.DIGroupKey",
+									"type": "Expression"
+								}
+							},
+							"DIGroupTaskPriorityOrder": {
+								"type": "Int16",
+								"value": {
+									"value": "@pipeline().parameters.DIGroupTaskPriorityOrder",
+									"type": "Expression"
+								}
+							}
+						},
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_Misc_CoreMetaDB",
+						"type": "DatasetReference"
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "End Pipeline Run",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "ForEach DITask in Priority Order",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[DIF].[EndPipelineRun]",
+					"storedProcedureParameters": {
+						"PipelineFullName": {
+							"value": {
+								"value": "@pipeline().Pipeline",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"PipelineRunID": {
+							"value": {
+								"value": "@pipeline().RunId",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"PipelineStatus": {
+							"value": "Succeeded",
+							"type": "String"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_DIF_Metadata",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "ForEach DITask in Priority Order",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Get DI Task Info",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Get DI Task Info').output.value\n\n",
+						"type": "Expression"
+					},
+					"isSequential": false,
+					"activities": [
+						{
+							"name": "PL Delimited File Copy",
+							"type": "ExecutePipeline",
+							"dependsOn": [],
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "PL_DIF_DelimitedFile_ToParquet",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"DataTaskKey": {
+										"value": "@item().DITaskKey",
+										"type": "Expression"
+									},
+									"RelatedDITaskKey": {
+										"value": "@item().RelatedDITaskKey",
+										"type": "Expression"
+									},
+									"RelatedPipelineFullName": {
+										"value": "@item().RelatedPipelineFullName",
+										"type": "Expression"
+									}
+								}
+							}
+						},
+						{
+							"name": "Send Error Alert",
+							"type": "ExecutePipeline",
+							"dependsOn": [
+								{
+									"activity": "PL Delimited File Copy",
+									"dependencyConditions": [
+										"Failed"
+									]
+								}
+							],
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "PL_DIF_SendEmailAlert",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"EmailTo": "mark.swiderski@key2consulting.com",
+									"ProjectName": {
+										"value": "@pipeline().parameters.ProjectName",
+										"type": "Expression"
+									},
+									"Subject": "Pipeline Failure - PL_DIF_DelimitedFile_TaskLoop",
+									"ErrorMessage": {
+										"value": "@{activity('PL Delimited File Copy').Error.Message}",
+										"type": "Expression"
+									}
+								}
+							}
+						}
+					]
+				}
+			}
+		],
+		"parameters": {
+			"DIGroupKey": {
+				"type": "int",
+				"defaultValue": 3
+			},
+			"DIGroupTaskPriorityOrder": {
+				"type": "int",
+				"defaultValue": 1
+			},
+			"DITaskKey": {
+				"type": "int",
+				"defaultValue": 6
+			},
+			"ProjectName": {
+				"type": "string",
+				"defaultValue": "Key2 - Delimited Text to Parquet"
+			}
+		},
+		"variables": {
+			"LoadType": {
+				"type": "String",
+				"defaultValue": "Default"
+			},
+			"TestVar": {
+				"type": "String"
+			}
+		},
+		"folder": {
+			"name": "DIF DelimitedFile"
+		},
+		"annotations": [],
+		"lastPublishTime": "2023-08-29T15:25:58Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

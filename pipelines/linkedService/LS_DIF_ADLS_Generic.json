@@ -1,0 +1,30 @@
+{
+	"name": "LS_DIF_ADLS_Generic",
+	"type": "Microsoft.DataFactory/factories/linkedservices",
+	"properties": {
+		"type": "AzureBlobFS",
+		"typeProperties": {
+			"url": "@{linkedService().DataLake_URL}",
+			"accountKey": {
+				"type": "AzureKeyVaultSecret",
+				"store": {
+					"referenceName": "LS_DIF_KeyVault",
+					"type": "LinkedServiceReference"
+				},
+				"secretName": {
+					"value": "@linkedService().DataLake_SecretName",
+					"type": "Expression"
+				}
+			}
+		},
+		"parameters": {
+			"DataLake_URL": {
+				"type": "string"
+			},
+			"DataLake_SecretName": {
+				"type": "string"
+			}
+		},
+		"annotations": []
+	}
+}

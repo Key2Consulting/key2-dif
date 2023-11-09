@@ -1,0 +1,6 @@
+CREATE SCHEMA [DIF]
+    AUTHORIZATION [dbo];
+
+
+GO
+

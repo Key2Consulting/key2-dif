@@ -1,0 +1,54 @@
+{
+	"name": "DS_ADLS_Generic_Folder",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "LS_DIF_ADLS_Generic",
+			"type": "LinkedServiceReference",
+			"parameters": {
+				"DataLake_URL": {
+					"value": "@dataset().DataLake_URL",
+					"type": "Expression"
+				},
+				"DataLake_SecretName": {
+					"value": "@dataset().DataLake_SecretName",
+					"type": "Expression"
+				}
+			}
+		},
+		"parameters": {
+			"DataLake_URL": {
+				"type": "string"
+			},
+			"DataLake_SecretName": {
+				"type": "string"
+			},
+			"DataLake_Container": {
+				"type": "string"
+			},
+			"DataLake_Folder": {
+				"type": "string"
+			}
+		},
+		"folder": {
+			"name": "DIF"
+		},
+		"annotations": [],
+		"type": "Parquet",
+		"typeProperties": {
+			"location": {
+				"type": "AzureBlobFSLocation",
+				"folderPath": {
+					"value": "@dataset().DataLake_Folder",
+					"type": "Expression"
+				},
+				"fileSystem": {
+					"value": "@dataset().DataLake_Container",
+					"type": "Expression"
+				}
+			},
+			"compressionCodec": "snappy"
+		},
+		"schema": []
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}

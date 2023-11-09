@@ -1,0 +1,1197 @@
+{
+	"name": "PL_DIF_DelimitedFile_ToParquet",
+	"properties": {
+		"activities": [
+			{
+				"name": "LU_LoadDelimitedFileList",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "Start Pipeline Run",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderStoredProcedureName": "[DIF].[GetDITaskDelimitedFileList]",
+						"storedProcedureParameters": {
+							"DITaskKey": {
+								"type": "Int32",
+								"value": {
+									"value": "@pipeline().parameters.DataTaskKey",
+									"type": "Expression"
+								}
+							}
+						},
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_Misc_CoreMetaDB",
+						"type": "DatasetReference"
+					},
+					"firstRowOnly": true
+				}
+			},
+			{
+				"name": "Get Metadata for Source Files",
+				"type": "GetMetadata",
+				"dependsOn": [
+					{
+						"activity": "LU_LoadDelimitedFileList",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"dataset": {
+						"referenceName": "DS_ADLS_DelimitedText_Generic",
+						"type": "DatasetReference",
+						"parameters": {
+							"DataLake_URL": {
+								"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceSystemFQDN",
+								"type": "Expression"
+							},
+							"DataLake_SecretName": {
+								"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceSystemSecretName",
+								"type": "Expression"
+							},
+							"DataLake_Container": {
+								"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceRepositoryName",
+								"type": "Expression"
+							},
+							"DataLake_Folder": {
+								"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDatasetPath",
+								"type": "Expression"
+							},
+							"DataLake_FileName": {
+								"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileNamePattern",
+								"type": "Expression"
+							},
+							"DataLake_FileColumnDelimiter": {
+								"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileColumnDelimiter",
+								"type": "Expression"
+							},
+							"DataLake_FileRowDelimiter": {
+								"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileRowDelimiter",
+								"type": "Expression"
+							},
+							"DataLake_FileQuoteCharacter": {
+								"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileQuoteCharacter",
+								"type": "Expression"
+							},
+							"DataLake_FileFirstRowAsHeader": {
+								"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileFirstRowAsHeader",
+								"type": "Expression"
+							},
+							"DataLake_FileCompressionType": {
+								"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileCompressionType",
+								"type": "Expression"
+							},
+							"DataLake_FileCompressionLevel": {
+								"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileCompressionLevel",
+								"type": "Expression"
+							},
+							"DataLake_FileEncoding": {
+								"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileEncoding",
+								"type": "Expression"
+							},
+							"DataLake_FileEscapeCharacter": {
+								"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileEscapeCharacter",
+								"type": "Expression"
+							},
+							"DataLake_FileNULLValue": {
+								"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileNULLValue",
+								"type": "Expression"
+							}
+						}
+					},
+					"fieldList": [
+						"childItems"
+					],
+					"storeSettings": {
+						"type": "AzureBlobFSReadSettings",
+						"recursive": true,
+						"enablePartitionDiscovery": false
+					},
+					"formatSettings": {
+						"type": "DelimitedTextReadSettings"
+					}
+				}
+			},
+			{
+				"name": "FOREACH Source File",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "Get Metadata for Source Files",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('Get Metadata for Source Files').output.childItems",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "If Source File Requires Header Override",
+							"type": "IfCondition",
+							"dependsOn": [],
+							"userProperties": [],
+							"typeProperties": {
+								"expression": {
+									"value": "@and(\nequals(item().type, 'File'), \nequals(activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileIsHeaderRowOverride, true)\n)",
+									"type": "Expression"
+								},
+								"ifTrueActivities": [
+									{
+										"name": "DATA FLOW Delimited File to Parquet",
+										"type": "ExecuteDataFlow",
+										"dependsOn": [],
+										"policy": {
+											"timeout": "1.00:00:00",
+											"retry": 0,
+											"retryIntervalInSeconds": 30,
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"typeProperties": {
+											"dataflow": {
+												"referenceName": "DF_Generic_DelimitedTextToParquet",
+												"type": "DataFlowReference",
+												"parameters": {
+													"SingleFileName": {
+														"value": "'@{concat(\n\tactivity('LU_LoadDelimitedFileList').output.firstRow.DestinationFileNamePrefix, \n\tsubstring(item().name, 0, lastindexof(item().name, '.') ), \n\t'.parquet'\n\t\n\t)\n}'",
+														"type": "Expression"
+													},
+													"DataTaskKey": {
+														"value": "@pipeline().parameters.DataTaskKey",
+														"type": "Expression"
+													}
+												},
+												"datasetParameters": {
+													"sourceDataset": {
+														"DataLake_URL": {
+															"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceSystemFQDN",
+															"type": "Expression"
+														},
+														"DataLake_SecretName": {
+															"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceSystemSecretName",
+															"type": "Expression"
+														},
+														"DataLake_Container": {
+															"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceRepositoryName",
+															"type": "Expression"
+														},
+														"DataLake_Folder": {
+															"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDatasetPath",
+															"type": "Expression"
+														},
+														"DataLake_FileName": {
+															"value": "@{item().name}",
+															"type": "Expression"
+														},
+														"DataLake_FileColumnDelimiter": {
+															"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileColumnDelimiter",
+															"type": "Expression"
+														},
+														"DataLake_FileRowDelimiter": {
+															"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileRowDelimiter",
+															"type": "Expression"
+														},
+														"DataLake_FileQuoteCharacter": {
+															"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileQuoteCharacter",
+															"type": "Expression"
+														},
+														"DataLake_FileFirstRowAsHeader": {
+															"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileFirstRowAsHeader",
+															"type": "Expression"
+														},
+														"DataLake_FileCompressionType": {
+															"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileCompressionType",
+															"type": "Expression"
+														},
+														"DataLake_FileCompressionLevel": {
+															"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileCompressionLevel",
+															"type": "Expression"
+														},
+														"DataLake_FileEncoding": {
+															"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileEncoding",
+															"type": "Expression"
+														},
+														"DataLake_FileEscapeCharacter": {
+															"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileEscapeCharacter",
+															"type": "Expression"
+														},
+														"DataLake_FileNULLValue": {
+															"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileNULLValue",
+															"type": "Expression"
+														}
+													},
+													"sinkParquet": {
+														"DataLake_URL": {
+															"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.DestinationSystemFQDN",
+															"type": "Expression"
+														},
+														"DataLake_SecretName": {
+															"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.DestinationSystemSecretName",
+															"type": "Expression"
+														},
+														"DataLake_Container": {
+															"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.DestinationRepositoryName",
+															"type": "Expression"
+														},
+														"DataLake_Folder": {
+															"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.DestinationLoadFolder",
+															"type": "Expression"
+														},
+														"DataLake_FileName": {
+															"value": "@concat(\n\tactivity('LU_LoadDelimitedFileList').output.firstRow.DestinationFileNamePrefix, \n\tsubstring(item().name, 0, lastindexof(item().name, '.') ), \n\t'.parquet'\n\t\n\t)\n",
+															"type": "Expression"
+														}
+													}
+												}
+											},
+											"compute": {
+												"coreCount": 8,
+												"computeType": "General"
+											},
+											"traceLevel": "Fine"
+										}
+									},
+									{
+										"name": "Add Pipeline Activity for Data Flow Task",
+										"type": "SqlServerStoredProcedure",
+										"dependsOn": [
+											{
+												"activity": "DATA FLOW Delimited File to Parquet",
+												"dependencyConditions": [
+													"Succeeded"
+												]
+											}
+										],
+										"policy": {
+											"timeout": "7.00:00:00",
+											"retry": 0,
+											"retryIntervalInSeconds": 30,
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"typeProperties": {
+											"storedProcedureName": "[DIF].[AddPipelineActivity]",
+											"storedProcedureParameters": {
+												"DITaskKey": {
+													"value": {
+														"value": "@pipeline().parameters.DataTaskKey",
+														"type": "Expression"
+													},
+													"type": "Int32"
+												},
+												"PipelineActivityEndDateTime": {
+													"value": {
+														"value": "@activity('DATA FLOW Delimited File to Parquet').ExecutionEndTime",
+														"type": "Expression"
+													},
+													"type": "DateTime"
+												},
+												"PipelineActivityName": {
+													"value": {
+														"value": "@concat(pipeline().Pipeline,'.FOREACH_LoadQuery')",
+														"type": "Expression"
+													},
+													"type": "String"
+												},
+												"PipelineActivityRunID": {
+													"value": {
+														"value": "@activity('DATA FLOW Delimited File to Parquet').ActivityRunId",
+														"type": "Expression"
+													},
+													"type": "String"
+												},
+												"PipelineActivityStartDateTime": {
+													"value": {
+														"value": "@activity('DATA FLOW Delimited File to Parquet').ExecutionStartTime",
+														"type": "Expression"
+													},
+													"type": "DateTime"
+												},
+												"PipelineActivityType": {
+													"value": "For Each",
+													"type": "String"
+												},
+												"PipelineFullName": {
+													"value": {
+														"value": "@pipeline().Pipeline",
+														"type": "Expression"
+													},
+													"type": "String"
+												},
+												"PipelineRunID": {
+													"value": {
+														"value": "@pipeline().RunId",
+														"type": "Expression"
+													},
+													"type": "String"
+												}
+											}
+										},
+										"linkedServiceName": {
+											"referenceName": "LS_DIF_Metadata",
+											"type": "LinkedServiceReference"
+										}
+									},
+									{
+										"name": "Add Result Value for SinkPath DFT",
+										"type": "SqlServerStoredProcedure",
+										"dependsOn": [
+											{
+												"activity": "Add Pipeline Activity for Data Flow Task",
+												"dependencyConditions": [
+													"Succeeded"
+												]
+											}
+										],
+										"policy": {
+											"timeout": "7.00:00:00",
+											"retry": 0,
+											"retryIntervalInSeconds": 30,
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"typeProperties": {
+											"storedProcedureName": "[DIF].[AddPipelineResultMultiple]",
+											"storedProcedureParameters": {
+												"PipelineActivityRunID": {
+													"value": {
+														"value": "@activity('DATA FLOW Delimited File to Parquet').ActivityRunId",
+														"type": "Expression"
+													},
+													"type": "String"
+												},
+												"PipelineResult": {
+													"value": {
+														"value": "@concat(\n\t'SinkPath|',activity('LU_LoadDelimitedFileList').output.firstRow.DestinationLoadFolder,\n\t';RowsCopied|',activity('DATA FLOW Delimited File to Parquet').output.runStatus.metrics.sinkParquet.rowsWritten,\n\t';SinkFileName|',\n\tconcat(\n\tactivity('LU_LoadDelimitedFileList').output.firstRow.DestinationFileNamePrefix, \n\tsubstring(item().name, 0, lastindexof(item().name, '.') ), \n\t'.parquet'\n\t),\n\t';LoadType|', 'Full Only',\n\t';SourceQuery|', ''\n)\n",
+														"type": "Expression"
+													},
+													"type": "String"
+												},
+												"PipelineRunID": {
+													"value": {
+														"value": "@pipeline().RunId",
+														"type": "Expression"
+													},
+													"type": "String"
+												}
+											}
+										},
+										"linkedServiceName": {
+											"referenceName": "LS_DIF_Metadata",
+											"type": "LinkedServiceReference"
+										}
+									}
+								]
+							}
+						},
+						{
+							"name": "If No Override Then Load Using Copy Data",
+							"type": "IfCondition",
+							"dependsOn": [
+								{
+									"activity": "If Source File Requires Header Override",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"userProperties": [],
+							"typeProperties": {
+								"expression": {
+									"value": "@and(\nequals(item().type, 'File'), \nequals(activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileIsHeaderRowOverride, false)\n)",
+									"type": "Expression"
+								},
+								"ifTrueActivities": [
+									{
+										"name": "COPY DATA from Delimited File to Parquet",
+										"type": "Copy",
+										"dependsOn": [],
+										"policy": {
+											"timeout": "7.00:00:00",
+											"retry": 0,
+											"retryIntervalInSeconds": 30,
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"typeProperties": {
+											"source": {
+												"type": "DelimitedTextSource",
+												"storeSettings": {
+													"type": "AzureBlobFSReadSettings",
+													"recursive": false,
+													"enablePartitionDiscovery": false
+												},
+												"formatSettings": {
+													"type": "DelimitedTextReadSettings"
+												}
+											},
+											"sink": {
+												"type": "ParquetSink",
+												"storeSettings": {
+													"type": "AzureBlobFSWriteSettings"
+												},
+												"formatSettings": {
+													"type": "ParquetWriteSettings"
+												}
+											},
+											"enableStaging": false,
+											"translator": {
+												"type": "TabularTranslator",
+												"typeConversion": true,
+												"typeConversionSettings": {
+													"allowDataTruncation": true,
+													"treatBooleanAsNumber": false
+												}
+											}
+										},
+										"inputs": [
+											{
+												"referenceName": "DS_ADLS_DelimitedText_Generic",
+												"type": "DatasetReference",
+												"parameters": {
+													"DataLake_URL": {
+														"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceSystemFQDN",
+														"type": "Expression"
+													},
+													"DataLake_SecretName": {
+														"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceSystemSecretName",
+														"type": "Expression"
+													},
+													"DataLake_Container": {
+														"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceRepositoryName",
+														"type": "Expression"
+													},
+													"DataLake_Folder": {
+														"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDatasetPath",
+														"type": "Expression"
+													},
+													"DataLake_FileName": {
+														"value": "@{item().name}",
+														"type": "Expression"
+													},
+													"DataLake_FileColumnDelimiter": {
+														"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileColumnDelimiter",
+														"type": "Expression"
+													},
+													"DataLake_FileRowDelimiter": {
+														"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileRowDelimiter",
+														"type": "Expression"
+													},
+													"DataLake_FileQuoteCharacter": {
+														"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileQuoteCharacter",
+														"type": "Expression"
+													},
+													"DataLake_FileFirstRowAsHeader": {
+														"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileFirstRowAsHeader",
+														"type": "Expression"
+													},
+													"DataLake_FileCompressionType": {
+														"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileCompressionType",
+														"type": "Expression"
+													},
+													"DataLake_FileCompressionLevel": {
+														"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileCompressionLevel",
+														"type": "Expression"
+													},
+													"DataLake_FileEncoding": {
+														"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileEncoding",
+														"type": "Expression"
+													},
+													"DataLake_FileEscapeCharacter": {
+														"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileEscapeCharacter",
+														"type": "Expression"
+													},
+													"DataLake_FileNULLValue": {
+														"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.SourceDelimitedFileNULLValue",
+														"type": "Expression"
+													}
+												}
+											}
+										],
+										"outputs": [
+											{
+												"referenceName": "DS_ADLS_Generic",
+												"type": "DatasetReference",
+												"parameters": {
+													"DataLake_URL": {
+														"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.DestinationSystemFQDN",
+														"type": "Expression"
+													},
+													"DataLake_SecretName": {
+														"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.DestinationSystemSecretName",
+														"type": "Expression"
+													},
+													"DataLake_Container": {
+														"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.DestinationRepositoryName",
+														"type": "Expression"
+													},
+													"DataLake_Folder": {
+														"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.DestinationLoadFolder",
+														"type": "Expression"
+													},
+													"DataLake_FileName": {
+														"value": "@concat(\n\tactivity('LU_LoadDelimitedFileList').output.firstRow.DestinationFileNamePrefix, \n\tsubstring(item().name, 0, lastindexof(item().name, '.') ), \n\t'.parquet'\n\t\n\t)\n",
+														"type": "Expression"
+													}
+												}
+											}
+										]
+									},
+									{
+										"name": "Add Pipeline Activity for Copy Task",
+										"type": "SqlServerStoredProcedure",
+										"dependsOn": [
+											{
+												"activity": "COPY DATA from Delimited File to Parquet",
+												"dependencyConditions": [
+													"Succeeded"
+												]
+											}
+										],
+										"policy": {
+											"timeout": "7.00:00:00",
+											"retry": 0,
+											"retryIntervalInSeconds": 30,
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"typeProperties": {
+											"storedProcedureName": "[DIF].[AddPipelineActivity]",
+											"storedProcedureParameters": {
+												"DITaskKey": {
+													"value": {
+														"value": "@pipeline().parameters.DataTaskKey",
+														"type": "Expression"
+													},
+													"type": "Int32"
+												},
+												"PipelineActivityEndDateTime": {
+													"value": {
+														"value": "@activity('COPY DATA from Delimited File to Parquet').ExecutionEndTime",
+														"type": "Expression"
+													},
+													"type": "DateTime"
+												},
+												"PipelineActivityName": {
+													"value": {
+														"value": "@concat(pipeline().Pipeline,'.FOREACH_LoadQuery')",
+														"type": "Expression"
+													},
+													"type": "String"
+												},
+												"PipelineActivityRunID": {
+													"value": {
+														"value": "@activity('COPY DATA from Delimited File to Parquet').ActivityRunId",
+														"type": "Expression"
+													},
+													"type": "String"
+												},
+												"PipelineActivityStartDateTime": {
+													"value": {
+														"value": "@activity('COPY DATA from Delimited File to Parquet').ExecutionStartTime",
+														"type": "Expression"
+													},
+													"type": "DateTime"
+												},
+												"PipelineActivityType": {
+													"value": "For Each",
+													"type": "String"
+												},
+												"PipelineFullName": {
+													"value": {
+														"value": "@pipeline().Pipeline",
+														"type": "Expression"
+													},
+													"type": "String"
+												},
+												"PipelineRunID": {
+													"value": {
+														"value": "@pipeline().RunId",
+														"type": "Expression"
+													},
+													"type": "String"
+												}
+											}
+										},
+										"linkedServiceName": {
+											"referenceName": "LS_DIF_Metadata",
+											"type": "LinkedServiceReference"
+										}
+									},
+									{
+										"name": "Add Result Value for SinkPath",
+										"type": "SqlServerStoredProcedure",
+										"dependsOn": [
+											{
+												"activity": "Add Pipeline Activity for Copy Task",
+												"dependencyConditions": [
+													"Succeeded"
+												]
+											}
+										],
+										"policy": {
+											"timeout": "7.00:00:00",
+											"retry": 0,
+											"retryIntervalInSeconds": 30,
+											"secureOutput": false,
+											"secureInput": false
+										},
+										"userProperties": [],
+										"typeProperties": {
+											"storedProcedureName": "[DIF].[AddPipelineResultMultiple]",
+											"storedProcedureParameters": {
+												"PipelineActivityRunID": {
+													"value": {
+														"value": "@activity('COPY DATA from Delimited File to Parquet').ActivityRunId",
+														"type": "Expression"
+													},
+													"type": "String"
+												},
+												"PipelineResult": {
+													"value": {
+														"value": "@concat(\n\t'SinkPath|',activity('LU_LoadDelimitedFileList').output.firstRow.DestinationLoadFolder,\n\t';RowsCopied|',activity('COPY DATA from Delimited File to Parquet').output.rowsCopied,\n\t';SinkFileName|',\n\tconcat(\n\tactivity('LU_LoadDelimitedFileList').output.firstRow.DestinationFileNamePrefix, \n\tsubstring(item().name, 0, lastindexof(item().name, '.') ), \n\t'.parquet'\n\t),\n\t';LoadType|', 'Full Only',\n\t';SourceQuery|', ''\n)",
+														"type": "Expression"
+													},
+													"type": "String"
+												},
+												"PipelineRunID": {
+													"value": {
+														"value": "@pipeline().RunId",
+														"type": "Expression"
+													},
+													"type": "String"
+												}
+											}
+										},
+										"linkedServiceName": {
+											"referenceName": "LS_DIF_Metadata",
+											"type": "LinkedServiceReference"
+										}
+									}
+								]
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Start Pipeline Run",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[DIF].[StartPipelineRun]",
+					"storedProcedureParameters": {
+						"PipelineFullName": {
+							"value": {
+								"value": "@pipeline().Pipeline",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"PipelineRunID": {
+							"value": {
+								"value": "@pipeline().RunId",
+								"type": "Expression"
+							},
+							"type": "String"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_DIF_Metadata",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "End Pipleline Run",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "If Check for Related Pipeline Execution",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[DIF].[EndPipelineRun]",
+					"storedProcedureParameters": {
+						"PipelineFullName": {
+							"value": {
+								"value": "@pipeline().Pipeline",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"PipelineRunID": {
+							"value": {
+								"value": "@pipeline().RunId",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"PipelineStatus": {
+							"value": "Succeeded",
+							"type": "String"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_DIF_Metadata",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "LU_Get_TotalRowsCopied",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "FOREACH Source File",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": {
+							"value": "SELECT \n\tTotalRowsCopied = ISNULL(SUM(TRY_CAST(rslt.PipelineResultValue AS BIGINT)),0) \nFROM \n\tlogging.PipelineResult rslt\n\tinner join logging.PipelineRun pr\n\t\ton rslt.PipelineRunKey = pr.PipelineRunKey\n\tinner join reference.PipelineResultName prn\n\t\ton rslt.PipelineResultNameKey = prn.PipelineResultNameKey\nWHERE \n\tpr.PipelineRunID = '@{pipeline().RunId}'\n\tAND prn.PipelineResultName = 'RowsCopied'",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_Misc_CoreMetaDB",
+						"type": "DatasetReference"
+					}
+				}
+			},
+			{
+				"name": "If Check for Related Pipeline Execution",
+				"type": "IfCondition",
+				"dependsOn": [
+					{
+						"activity": "If Zero Or More Files Copied To Raw",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"expression": {
+						"value": "@and(equals(pipeline().parameters.RelatedPipelineFullName,'PL_DIF_DelimitedFile_RawToRefined'),greater(int(activity('LU_Get_TotalRowsCopied').output.firstRow.TotalRowsCopied),0))",
+						"type": "Expression"
+					},
+					"ifTrueActivities": [
+						{
+							"name": "Execute RawToRefined Pipeline",
+							"type": "ExecutePipeline",
+							"dependsOn": [],
+							"userProperties": [],
+							"typeProperties": {
+								"pipeline": {
+									"referenceName": "PL_DIF_DelimitedFile_RawToRefined",
+									"type": "PipelineReference"
+								},
+								"waitOnCompletion": true,
+								"parameters": {
+									"DITaskKey": {
+										"value": "@pipeline().parameters.DataTaskKey",
+										"type": "Expression"
+									},
+									"DIRelatedTaskKey": {
+										"value": "@pipeline().parameters.RelatedDITaskKey",
+										"type": "Expression"
+									},
+									"SourceRowCount": {
+										"value": "@activity('LU_Get_TotalRowsCopied').output.firstRow.TotalRowsCopied",
+										"type": "Expression"
+									}
+								}
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "LU_Get_TotalFilesCopied",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "LU_Get_TotalRowsCopied",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": {
+							"value": "SELECT \n\tTotalFilesCopiedToRaw = ISNULL(COUNT([PipelineResultKey]),0)\nFROM \n\tlogging.PipelineResult rslt\n\tinner join logging.PipelineRun pr\n\t\ton rslt.PipelineRunKey = pr.PipelineRunKey\n\tinner join reference.PipelineResultName prn\n\t\ton rslt.PipelineResultNameKey = prn.PipelineResultNameKey\nWHERE \n\t1=1\n\t--AND pr.PipelineRunID = '@{pipeline().RunId}'\n\tAND prn.PipelineResultName = 'RowsCopied'",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_Misc_CoreMetaDB",
+						"type": "DatasetReference"
+					}
+				}
+			},
+			{
+				"name": "If Zero Or More Files Copied To Raw",
+				"type": "IfCondition",
+				"dependsOn": [
+					{
+						"activity": "LU_Get_TotalFilesCopied",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"expression": {
+						"value": "@greater(activity('LU_Get_TotalFilesCopied').output.firstRow.TotalFilesCopiedToRaw, -1)",
+						"type": "Expression"
+					},
+					"ifTrueActivities": [
+						{
+							"name": "Merge Multiple Parquet Files Into One",
+							"type": "Copy",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "ParquetSource",
+									"storeSettings": {
+										"type": "AzureBlobFSReadSettings",
+										"recursive": false,
+										"wildcardFolderPath": {
+											"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.DestinationLoadFolder",
+											"type": "Expression"
+										},
+										"wildcardFileName": "*.parquet",
+										"enablePartitionDiscovery": false
+									},
+									"formatSettings": {
+										"type": "ParquetReadSettings"
+									}
+								},
+								"sink": {
+									"type": "ParquetSink",
+									"storeSettings": {
+										"type": "AzureBlobFSWriteSettings",
+										"copyBehavior": "MergeFiles"
+									},
+									"formatSettings": {
+										"type": "ParquetWriteSettings"
+									}
+								},
+								"enableStaging": false,
+								"translator": {
+									"type": "TabularTranslator",
+									"typeConversion": true,
+									"typeConversionSettings": {
+										"allowDataTruncation": true,
+										"treatBooleanAsNumber": false
+									}
+								}
+							},
+							"inputs": [
+								{
+									"referenceName": "DS_ADLS_Generic_Folder",
+									"type": "DatasetReference",
+									"parameters": {
+										"DataLake_URL": {
+											"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.DestinationSystemFQDN",
+											"type": "Expression"
+										},
+										"DataLake_SecretName": {
+											"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.DestinationSystemSecretName",
+											"type": "Expression"
+										},
+										"DataLake_Container": {
+											"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.DestinationRepositoryName",
+											"type": "Expression"
+										},
+										"DataLake_Folder": {
+											"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.DestinationLoadFolder",
+											"type": "Expression"
+										}
+									}
+								}
+							],
+							"outputs": [
+								{
+									"referenceName": "DS_ADLS_Generic",
+									"type": "DatasetReference",
+									"parameters": {
+										"DataLake_URL": {
+											"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.DestinationSystemFQDN",
+											"type": "Expression"
+										},
+										"DataLake_SecretName": {
+											"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.DestinationSystemSecretName",
+											"type": "Expression"
+										},
+										"DataLake_Container": {
+											"value": "@activity('LU_LoadDelimitedFileList').output.firstRow.DestinationRepositoryName",
+											"type": "Expression"
+										},
+										"DataLake_Folder": {
+											"value": "@concat(activity('LU_LoadDelimitedFileList').output.firstRow.DestinationLoadFolder, '/combined')",
+											"type": "Expression"
+										},
+										"DataLake_FileName": {
+											"value": "@concat(\n\tactivity('LU_LoadDelimitedFileList').output.firstRow.DestinationFileNamePrefix, \n\tactivity('LU_LoadDelimitedFileList').output.firstRow.DestinationDatasetNameSpace,\n\t'_combined',\n\t'.parquet'\t\n\t)",
+											"type": "Expression"
+										}
+									}
+								}
+							]
+						},
+						{
+							"name": "Add Result Value for SinkPath_COMBINED",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "Add Pipeline Activity for Merge Multiple Parquet Files",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[DIF].[AddPipelineResultMultiple]",
+								"storedProcedureParameters": {
+									"PipelineActivityRunID": {
+										"value": {
+											"value": "@activity('Merge Multiple Parquet Files Into One').ActivityRunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineResult": {
+										"value": {
+											"value": "@concat(\n\t'SinkPath_COMBINED|',concat(activity('LU_LoadDelimitedFileList').output.firstRow.DestinationLoadFolder, '/combined'),\n\t';RowsCopied|',activity('Merge Multiple Parquet Files Into One').output.rowsCopied,\n\t';SinkFileName_COMBINED|',\n\tconcat(\n\tactivity('LU_LoadDelimitedFileList').output.firstRow.DestinationFileNamePrefix, \n\tactivity('LU_LoadDelimitedFileList').output.firstRow.DestinationDatasetNameSpace,\n\t'_combined',\n\t'.parquet'\t\n\t),\n\t';LoadType|', 'Full Only',\n\t';SourceQuery|', ''\n)",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineRunID": {
+										"value": {
+											"value": "@pipeline().RunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_DIF_Metadata",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Add Pipeline Activity for Merge Multiple Parquet Files",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "Merge Multiple Parquet Files Into One",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[DIF].[AddPipelineActivity]",
+								"storedProcedureParameters": {
+									"DITaskKey": {
+										"value": {
+											"value": "@pipeline().parameters.DataTaskKey",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									},
+									"PipelineActivityEndDateTime": {
+										"value": {
+											"value": "@activity('Merge Multiple Parquet Files Into One').ExecutionEndTime",
+											"type": "Expression"
+										},
+										"type": "DateTime"
+									},
+									"PipelineActivityName": {
+										"value": {
+											"value": "@concat(pipeline().Pipeline,'.Merge Multiple Parquet Files Into One')",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineActivityRunID": {
+										"value": {
+											"value": "@activity('Merge Multiple Parquet Files Into One').ActivityRunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineActivityStartDateTime": {
+										"value": {
+											"value": "@activity('Merge Multiple Parquet Files Into One').ExecutionStartTime",
+											"type": "Expression"
+										},
+										"type": "DateTime"
+									},
+									"PipelineActivityType": {
+										"value": "Copy data",
+										"type": "String"
+									},
+									"PipelineFullName": {
+										"value": {
+											"value": "@pipeline().Pipeline",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineRunID": {
+										"value": {
+											"value": "@pipeline().RunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_DIF_Metadata",
+								"type": "LinkedServiceReference"
+							}
+						}
+					]
+				}
+			}
+		],
+		"parameters": {
+			"DataTaskKey": {
+				"type": "int",
+				"defaultValue": 7
+			},
+			"RelatedDITaskKey": {
+				"type": "int",
+				"defaultValue": 99
+			},
+			"RelatedPipelineFullName": {
+				"type": "string",
+				"defaultValue": "99"
+			}
+		},
+		"variables": {
+			"TotalRowsCopied": {
+				"type": "String"
+			}
+		},
+		"folder": {
+			"name": "DIF DelimitedFile"
+		},
+		"annotations": [],
+		"lastPublishTime": "2023-08-29T15:58:14Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

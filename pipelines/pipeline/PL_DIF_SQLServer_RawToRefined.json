@@ -1,0 +1,1314 @@
+{
+	"name": "PL_DIF_SQLServer_RawToRefined",
+	"properties": {
+		"activities": [
+			{
+				"name": "Start Pipeline Run",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[DIF].[StartPipelineRun]",
+					"storedProcedureParameters": {
+						"PipelineFullName": {
+							"value": {
+								"value": "@pipeline().Pipeline",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"PipelineRunID": {
+							"value": {
+								"value": "@pipeline().RunId",
+								"type": "Expression"
+							},
+							"type": "String"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_DIF_Metadata",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "End Pipeline Run",
+				"type": "SqlServerStoredProcedure",
+				"dependsOn": [
+					{
+						"activity": "If Full Then Incremental LoadType",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "7.00:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"storedProcedureName": "[DIF].[EndPipelineRun]",
+					"storedProcedureParameters": {
+						"PipelineFullName": {
+							"value": {
+								"value": "@pipeline().Pipeline",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"PipelineRunID": {
+							"value": {
+								"value": "@pipeline().RunId",
+								"type": "Expression"
+							},
+							"type": "String"
+						},
+						"PipelineStatus": {
+							"value": "Succeeded",
+							"type": "String"
+						}
+					}
+				},
+				"linkedServiceName": {
+					"referenceName": "LS_DIF_Metadata",
+					"type": "LinkedServiceReference"
+				}
+			},
+			{
+				"name": "If Incremental LoadType",
+				"type": "IfCondition",
+				"dependsOn": [
+					{
+						"activity": "Get LoadType",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"expression": {
+						"value": "@equals(activity('Get LoadType').output.firstRow.LoadType,'Incremental')",
+						"type": "Expression"
+					},
+					"ifTrueActivities": [
+						{
+							"name": "Lk Incr table to Process",
+							"type": "Lookup",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.00:06:30",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "select  \n\t'/mnt/' + lower(DestinationRepositoryName) as rawMountPoint\n\t, DestinationRepositoryName as rawContainer\n\t, replace(lower(p.PipelineResultValue),'\\', '/') + '/' as rawFolder\n\t, SourceSystemFQDN as  SourceServerName\n\t, lower(SourceRepositoryName) as SourceDatabaseName\n\t, lower(SourceDatasetNameSpace) as tableSchema\n\t, replace(lower(SourceDatasetName), ' ', '_') as tableName\n\t, coalesce(aprt.AttributeName, 'NONE') as tablePartitionColumn \n\t, case when aprt.AttributeName like '%date%' then 'Y' else 'N' end as  tablePartitionedByDate\n\t, ISNULL(UICL.UniqueIDColumnList, '') as UniqueIDColumnList\n\t, SourceSystemSecretName as MetaDataSecretName\n\t, DestinationStorageType as DataLakeFormat\n\t, '0'  as RowCountAuditTolerancePct\n\t, CASE WHEN ISNULL(UICL.UniqueIDColumnList, '') = '' THEN 'N' ELSE 'Y' END as DuplicateCheckInRefinedZone\n\t, DestinationLogicalDatabaseName as databricksDatabase\nfrom \n\tDIF.DITaskDetail td\n\tOUTER APPLY (\t\n\t\tSELECT\n\t\t\tUniqueIDColumnList = STRING_AGG(APKM.AttributeName, ',')\n\t\tFROM\n\t\t\tmetadata.Attribute APKM\n\t\tWHERE\n\t\t\ttd.SourceDatasetKey = APKM.DatasetKey\n            and APKM.AttributeIsPrimaryKey = 1\n\t) UICL\n    left outer join metadata.Attribute aprt\n            on td.SourceDatasetKey = aprt.DatasetKey\n            and aprt.AttributePartitionKeyOrder > 0\n    outer apply (select prs.PipelineResultValue,row_number()over(partition by pa.DITaskKey order by pa.PipelineActivityStartDateTime desc) as RowNum\n                                from logging.PipelineActivity pa\n                                        INNER JOIN logging.PipelineRun pr\n                                            on pa.PipelineRunKey = pr.PipelineRunKey\n                                        INNER JOIN config.Pipeline p\n                                            on pr.PipelineKey = p.PipelineKey\n                                        INNER JOIN logging.PipelineResult prs\n                                            on pa.PipelineActivityKey = prs.PipelineActivityKey\n                                            and pr.PipelineRunKey = prs.PipelineRunKey\n                                        INNER JOIN reference.PipelineResultName prn\n                                            on prs.PipelineResultNameKey = prn.PipelineResultNameKey\n                                where td.DITaskKey = pa.DITaskKey\n                                and prn.PipelineResultName = 'SinkPath'\n                                                        and prs.PipelineResultValue like '%incremental%'\n                                )p                                \nwhere \n\t1=1\n\tand p.RowNum = 1\n\tand  replace(lower(p.PipelineResultValue),'\\', '/') + '/' like '%/incremental/%'\n\tand DITaskKey = @{pipeline().parameters.DITaskKey}",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DS_Misc_CoreMetaDB",
+									"type": "DatasetReference"
+								},
+								"firstRowOnly": true
+							}
+						},
+						{
+							"name": "NB_IncrementalTableRepl_Refined_DataLake",
+							"type": "DatabricksNotebook",
+							"dependsOn": [
+								{
+									"activity": "Lk Incr table to Process Refined",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.04:00:00",
+								"retry": 20,
+								"retryIntervalInSeconds": 600,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"notebookPath": "/Repos/Shared/key2-demo-eia/notebooks/EIA_DIF/NB_IncrementalTableRepl_Refined_DataLake",
+								"baseParameters": {
+									"rawMountPoint": {
+										"value": "@activity('Lk Incr table to Process').output.firstRow.rawMountPoint",
+										"type": "Expression"
+									},
+									"refinedMountPoint": {
+										"value": "@activity('Lk Incr table to Process Refined').output.firstRow.refinedMountPoint",
+										"type": "Expression"
+									},
+									"scope": "bedrock-secrets",
+									"rawFolder": {
+										"value": "@activity('Lk Incr table to Process').output.firstRow.rawFolder",
+										"type": "Expression"
+									},
+									"refinedFolder": {
+										"value": "@activity('Lk Incr table to Process Refined').output.firstRow.refinedFolder",
+										"type": "Expression"
+									},
+									"tableName": {
+										"value": "@activity('Lk Incr table to Process').output.firstRow.tableName",
+										"type": "Expression"
+									},
+									"tablePartitionColumn": {
+										"value": "@activity('Lk Incr table to Process').output.firstRow.tablePartitionColumn",
+										"type": "Expression"
+									},
+									"tableSchema": {
+										"value": "@activity('Lk Incr table to Process').output.firstRow.tableSchema",
+										"type": "Expression"
+									},
+									"ADFName": {
+										"value": "@pipeline().DataFactory",
+										"type": "Expression"
+									},
+									"PipelineName": {
+										"value": "@pipeline().Pipeline",
+										"type": "Expression"
+									},
+									"PipelineType": {
+										"value": "@activity('Get LoadType').output.firstRow.LoadType",
+										"type": "Expression"
+									},
+									"RunId": {
+										"value": "@pipeline().RunId",
+										"type": "Expression"
+									},
+									"MedataDataServer": {
+										"value": "@activity('Lk Metadata database info').output.firstRow.MedataDataServer",
+										"type": "Expression"
+									},
+									"MetaDataDatabase": {
+										"value": "@activity('Lk Metadata database info').output.firstRow.MetaDataDatabase",
+										"type": "Expression"
+									},
+									"MetaDataUserID": {
+										"value": "@activity('Lk Metadata database info').output.firstRow.UserID",
+										"type": "Expression"
+									},
+									"MetaDataSecretName": {
+										"value": "@activity('Lk Incr table to Process').output.firstRow.MetaDataSecretName",
+										"type": "Expression"
+									},
+									"databricksDatabase": {
+										"value": "@activity('Lk Incr table to Process').output.firstRow.databricksDatabase",
+										"type": "Expression"
+									},
+									"SourceServerName": {
+										"value": "@activity('Lk Incr table to Process').output.firstRow.SourceServerName",
+										"type": "Expression"
+									},
+									"SourceDatabaseName": {
+										"value": "@activity('Lk Incr table to Process').output.firstRow.SourceDatabaseName",
+										"type": "Expression"
+									},
+									"SourceRowCount": {
+										"value": "@string(pipeline().parameters.SourceRowCount)",
+										"type": "Expression"
+									},
+									"RowCountAuditTolerancePct": {
+										"value": "@activity('Lk Incr table to Process').output.firstRow.RowCountAuditTolerancePct",
+										"type": "Expression"
+									},
+									"DuplicateCheckInRefinedZone": {
+										"value": "@activity('Lk Incr table to Process').output.firstRow.DuplicateCheckInRefinedZone",
+										"type": "Expression"
+									},
+									"UniqueIDColumnList": {
+										"value": "@activity('Lk Incr table to Process').output.firstRow.UniqueIDColumnList",
+										"type": "Expression"
+									},
+									"DataLakeFormat": {
+										"value": "@activity('Lk Incr table to Process').output.firstRow.DataLakeFormat",
+										"type": "Expression"
+									},
+									"SoftDeleteCondition": {
+										"value": "@activity('Lk Incr table to Process Refined').output.firstRow.SoftDeleteCondition",
+										"type": "Expression"
+									},
+									"tablePartitionedByDate": {
+										"value": "@activity('Lk Incr table to Process').output.firstRow.tablePartitionedByDate",
+										"type": "Expression"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_Core_DataBricks_Pool",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Add Pipeline Activity for NB_IncrRawToRefined",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "NB_IncrementalTableRepl_Refined_DataLake",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[DIF].[AddPipelineActivity]",
+								"storedProcedureParameters": {
+									"DITaskKey": {
+										"value": {
+											"value": "@pipeline().parameters.DIRelatedTaskKey",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									},
+									"PipelineActivityEndDateTime": {
+										"value": {
+											"value": "@split(activity('NB_IncrementalTableRepl_Refined_DataLake').output.runOutput,'|')[0]",
+											"type": "Expression"
+										},
+										"type": "DateTime"
+									},
+									"PipelineActivityName": {
+										"value": {
+											"value": "@concat(pipeline().Pipeline,'.NB_PSS_IncrementalTableRepl_Refined_DataLake')",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineActivityRunID": {
+										"value": {
+											"value": "@activity('NB_IncrementalTableRepl_Refined_DataLake').ActivityRunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineActivityStartDateTime": {
+										"value": {
+											"value": "@split(activity('NB_IncrementalTableRepl_Refined_DataLake').output.runOutput,'|')[0]\n",
+											"type": "Expression"
+										},
+										"type": "DateTime"
+									},
+									"PipelineActivityType": {
+										"value": {
+											"value": "RefinedProcessing",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineFullName": {
+										"value": {
+											"value": "@pipeline().Pipeline",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineRunID": {
+										"value": {
+											"value": "@pipeline().RunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_DIF_Metadata",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Add result value for NB_IncrRawToRefined",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "Add Pipeline Activity for NB_IncrRawToRefined",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[DIF].[AddPipelineResultMultiple]",
+								"storedProcedureParameters": {
+									"PipelineActivityRunID": {
+										"value": {
+											"value": "@activity('NB_IncrementalTableRepl_Refined_DataLake').ActivityRunId\n\n",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineResult": {
+										"value": {
+											"value": "@concat('SinkPath|',split(activity('NB_IncrementalTableRepl_Refined_DataLake').output.runOutput,'|')[1],';RowsCopied|',split(activity('NB_IncrementalTableRepl_Refined_DataLake').output.runOutput,'|')[2],';executionStatus|',split(activity('NB_IncrementalTableRepl_Refined_DataLake').output.runOutput,'|')[4],';LoadType|',activity('Get LoadType').output.firstRow.LoadType)\n\n",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineRunID": {
+										"value": {
+											"value": "@pipeline().RunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_DIF_Metadata",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Lk Incr table to Process Refined",
+							"type": "Lookup",
+							"dependsOn": [
+								{
+									"activity": "Lk Incr table to Process",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.00:06:30",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "select '/mnt/' + lower(DestinationRepositoryName) as refinedMountPoint\n, lower(DestinationDatasetPath)  + '/' + lower(SourceDatasetNameSpace) + '/' + lower(SourceDatasetName) + '/' as refinedFolder\n, DestinationRepositoryName as refinedContainer\n, DITaskSourceFilterLogic as SoftDeleteCondition\nfrom DIF.DITaskDetail td\nwhere DITaskKey = @{pipeline().parameters.DIRelatedTaskKey}",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DS_Misc_CoreMetaDB",
+									"type": "DatasetReference"
+								},
+								"firstRowOnly": true
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "If Full LoadType",
+				"type": "IfCondition",
+				"dependsOn": [
+					{
+						"activity": "If Incremental LoadType",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"expression": {
+						"value": "@equals(activity('Get LoadType').output.firstRow.LoadType,'Full Only')",
+						"type": "Expression"
+					},
+					"ifTrueActivities": [
+						{
+							"name": "Lk Full table to Process",
+							"type": "Lookup",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.00:06:30",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "select  \n\t'/mnt/' + lower(DestinationRepositoryName) as rawMountPoint\n\t, DestinationRepositoryName as rawContainer\n\t, replace(lower(p.PipelineResultValue),'\\', '/') + '/' as rawFolder\n\t, SourceSystemFQDN as  SourceServerName \n\t, lower(SourceRepositoryName) as SourceDatabaseName\n\t, lower(SourceDatasetNameSpace) as tableSchema\n\t, replace(lower(SourceDatasetName), ' ', '_') as tableName\n\t, coalesce(aprt.AttributeName, 'NONE') as tablePartitionColumn \n\t, case when aprt.AttributeName like '%date%' then 'Y' else 'N' end as  tablePartitionedByDate\n\t, ISNULL(UICL.UniqueIDColumnList, '') as UniqueIDColumnList\n\t, SourceSystemSecretName as MetaDataSecretName\n\t, DestinationStorageType as DataLakeFormat\n\t, '0' as RowCountAuditTolerancePct\n\t, CASE WHEN ISNULL(UICL.UniqueIDColumnList, '') = '' THEN 'N' ELSE 'Y' END as DuplicateCheckInRefinedZone\n\t, DestinationLogicalDatabaseName as databricksDatabase\nfrom \n\tDIF.DITaskDetail td\n\tOUTER APPLY (\t\n\t\tSELECT\n\t\t\tUniqueIDColumnList = STRING_AGG(APKM.AttributeName, ',')\n\t\tFROM\n\t\t\tmetadata.Attribute APKM\n\t\tWHERE\n\t\t\ttd.SourceDatasetKey = APKM.DatasetKey\n            and APKM.AttributeIsPrimaryKey = 1\n\t) UICL\n    left outer join metadata.Attribute aprt\n            on td.SourceDatasetKey = aprt.DatasetKey\n            and aprt.AttributePartitionKeyOrder > 0\n    outer apply (select prs.PipelineResultValue,row_number()over(partition by pa.DITaskKey order by pa.PipelineActivityStartDateTime desc) as RowNum\n                            from logging.PipelineActivity pa\n                                    INNER JOIN logging.PipelineRun pr\n                                        on pa.PipelineRunKey = pr.PipelineRunKey\n                                    INNER JOIN config.Pipeline p\n                                        on pr.PipelineKey = p.PipelineKey\n                                    INNER JOIN logging.PipelineResult prs\n                                        on pa.PipelineActivityKey = prs.PipelineActivityKey\n                                        and pr.PipelineRunKey = prs.PipelineRunKey\n                                    INNER JOIN reference.PipelineResultName prn\n                                        on prs.PipelineResultNameKey = prn.PipelineResultNameKey\n                            where td.DITaskKey = pa.DITaskKey\n                            and prn.PipelineResultName = 'SinkPath'\n                                                    and prs.PipelineResultValue like '%full%'\n                            )p                                \nwhere \n\t1=1\n\tand p.RowNum = 1\n\tand  replace(lower(p.PipelineResultValue),'\\', '/') + '/' like '%/full/%'\n\tand DITaskKey = @{pipeline().parameters.DITaskKey}",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DS_Misc_CoreMetaDB",
+									"type": "DatasetReference"
+								},
+								"firstRowOnly": true
+							}
+						},
+						{
+							"name": "NB_FullTableRepl_Refined_DataLake",
+							"type": "DatabricksNotebook",
+							"dependsOn": [
+								{
+									"activity": "Lk Full table to Process Refined",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.04:00:00",
+								"retry": 20,
+								"retryIntervalInSeconds": 600,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"notebookPath": "/Repos/Shared/key2-demo-eia/notebooks/EIA_DIF/NB_FullTableRepl_Refined_DataLake",
+								"baseParameters": {
+									"rawMountPoint": {
+										"value": "@activity('Lk Full table to Process').output.firstRow.rawMountPoint\n",
+										"type": "Expression"
+									},
+									"refinedMountPoint": {
+										"value": "@activity('Lk Full table to Process Refined').output.firstRow.refinedMountPoint",
+										"type": "Expression"
+									},
+									"scope": "bedrock-secrets",
+									"rawFolder": {
+										"value": "@activity('Lk Full table to Process').output.firstRow.rawFolder",
+										"type": "Expression"
+									},
+									"refinedFolder": {
+										"value": "@activity('Lk Full table to Process Refined').output.firstRow.refinedFolder",
+										"type": "Expression"
+									},
+									"tableName": {
+										"value": "@activity('Lk Full table to Process').output.firstRow.tableName",
+										"type": "Expression"
+									},
+									"tablePartitionColumn": {
+										"value": "@activity('Lk Full table to Process').output.firstRow.tablePartitionColumn",
+										"type": "Expression"
+									},
+									"tableSchema": {
+										"value": "@activity('Lk Full table to Process').output.firstRow.tableSchema",
+										"type": "Expression"
+									},
+									"ADFName": {
+										"value": "@pipeline().DataFactory",
+										"type": "Expression"
+									},
+									"PipelineName": {
+										"value": "@pipeline().Pipeline",
+										"type": "Expression"
+									},
+									"PipelineType": {
+										"value": "@activity('Get LoadType').output.firstRow.LoadType",
+										"type": "Expression"
+									},
+									"RunId": {
+										"value": "@pipeline().RunId",
+										"type": "Expression"
+									},
+									"MedataDataServer": {
+										"value": "@activity('Lk Metadata database info').output.firstRow.MedataDataServer",
+										"type": "Expression"
+									},
+									"MetaDataDatabase": {
+										"value": "@activity('Lk Metadata database info').output.firstRow.MetaDataDatabase",
+										"type": "Expression"
+									},
+									"MetaDataUserID": {
+										"value": "@activity('Lk Metadata database info').output.firstRow.UserID",
+										"type": "Expression"
+									},
+									"MetaDataSecretName": {
+										"value": "@activity('Lk Full table to Process').output.firstRow.MetaDataSecretName",
+										"type": "Expression"
+									},
+									"databricksDatabase": {
+										"value": "@activity('Lk Full table to Process').output.firstRow.databricksDatabase",
+										"type": "Expression"
+									},
+									"SourceServerName": {
+										"value": "@activity('Lk Full table to Process').output.firstRow.SourceServerName",
+										"type": "Expression"
+									},
+									"SourceDatabaseName": {
+										"value": "@activity('Lk Full table to Process').output.firstRow.SourceDatabaseName",
+										"type": "Expression"
+									},
+									"SourceRowCount": {
+										"value": "@string(pipeline().parameters.SourceRowCount)",
+										"type": "Expression"
+									},
+									"RowCountAuditTolerancePct": {
+										"value": "@activity('Lk Full table to Process').output.firstRow.RowCountAuditTolerancePct",
+										"type": "Expression"
+									},
+									"DuplicateCheckInRefinedZone": {
+										"value": "@activity('Lk Full table to Process').output.firstRow.DuplicateCheckInRefinedZone",
+										"type": "Expression"
+									},
+									"UniqueIDColumnList": {
+										"value": "@activity('Lk Full table to Process').output.firstRow.UniqueIDColumnList",
+										"type": "Expression"
+									},
+									"DataLakeFormat": {
+										"value": "@activity('Lk Full table to Process').output.firstRow.DataLakeFormat",
+										"type": "Expression"
+									},
+									"SoftDeleteCondition": {
+										"value": "@activity('Lk Full table to Process Refined').output.firstRow.SoftDeleteCondition",
+										"type": "Expression"
+									},
+									"tablePartitionedByDate": {
+										"value": "@activity('Lk Full table to Process').output.firstRow.tablePartitionedByDate",
+										"type": "Expression"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_Core_DataBricks_Pool",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Add Pipeline Activity for NB_Full",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "NB_FullTableRepl_Refined_DataLake",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[DIF].[AddPipelineActivity]",
+								"storedProcedureParameters": {
+									"DITaskKey": {
+										"value": {
+											"value": "@pipeline().parameters.DIRelatedTaskKey",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									},
+									"PipelineActivityEndDateTime": {
+										"value": {
+											"value": "@split(activity('NB_FullTableRepl_Refined_DataLake').output.runOutput,'|')[0]",
+											"type": "Expression"
+										},
+										"type": "DateTime"
+									},
+									"PipelineActivityName": {
+										"value": {
+											"value": "@concat(pipeline().Pipeline,'.NB_PSS_FullTableRepl_Refined_DataLake')",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineActivityRunID": {
+										"value": {
+											"value": "@activity('NB_FullTableRepl_Refined_DataLake').ActivityRunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineActivityStartDateTime": {
+										"value": {
+											"value": "@split(activity('NB_FullTableRepl_Refined_DataLake').output.runOutput,'|')[0]",
+											"type": "Expression"
+										},
+										"type": "DateTime"
+									},
+									"PipelineActivityType": {
+										"value": {
+											"value": "Source Audit",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineFullName": {
+										"value": {
+											"value": "@pipeline().Pipeline",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineRunID": {
+										"value": {
+											"value": "@pipeline().RunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_DIF_Metadata",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Add result value for NB_FullRawToRefined",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "Add Pipeline Activity for NB_Full",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[DIF].[AddPipelineResultMultiple]",
+								"storedProcedureParameters": {
+									"PipelineActivityRunID": {
+										"value": {
+											"value": "@activity('NB_FullTableRepl_Refined_DataLake').ActivityRunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineResult": {
+										"value": {
+											"value": "@concat('SinkPath|',split(activity('NB_FullTableRepl_Refined_DataLake').output.runOutput,'|')[1],';RowsCopied|',split(activity('NB_FullTableRepl_Refined_DataLake').output.runOutput,'|')[2],';executionStatus|',split(activity('NB_FullTableRepl_Refined_DataLake').output.runOutput,'|')[4],';LoadType|',activity('Get LoadType').output.firstRow.LoadType)\n",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineRunID": {
+										"value": {
+											"value": "@pipeline().RunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_DIF_Metadata",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Lk Full table to Process Refined",
+							"type": "Lookup",
+							"dependsOn": [
+								{
+									"activity": "Lk Full table to Process",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.00:06:30",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "select '/mnt/' + lower(DestinationRepositoryName) as refinedMountPoint\n, lower(DestinationDatasetPath)  + '/' + lower(SourceDatasetNameSpace) + '/' + lower(SourceDatasetName) + '/' as refinedFolder\n, DestinationRepositoryName as refinedContainer\n, DITaskSourceFilterLogic as SoftDeleteCondition\nfrom DIF.DITaskDetail td\nwhere DITaskKey = @{pipeline().parameters.DIRelatedTaskKey}",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DS_Misc_CoreMetaDB",
+									"type": "DatasetReference"
+								},
+								"firstRowOnly": true
+							}
+						}
+					]
+				}
+			},
+			{
+				"name": "Lk Metadata database info",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "Start Pipeline Run",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.00:02:00",
+					"retry": 2,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": "select @@SERVERNAME + '.database.usgovcloudapi.net' as MedataDataServer, db_name() as MetaDataDatabase ,  system_user as UserID",
+						"queryTimeout": "00:01:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_Misc_CoreMetaDB",
+						"type": "DatasetReference"
+					}
+				}
+			},
+			{
+				"name": "Get DataBrricksNodeInfo",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "Lk Metadata database info",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.00:10:00",
+					"retry": 1,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderStoredProcedureName": "[DIF].[GetDataBricksInfo]",
+						"storedProcedureParameters": {
+							"SourceRowCount": {
+								"type": "Int64",
+								"value": {
+									"value": "@pipeline().parameters.SourceRowCount",
+									"type": "Expression"
+								}
+							}
+						},
+						"queryTimeout": "00:09:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_Misc_CoreMetaDB",
+						"type": "DatasetReference"
+					}
+				}
+			},
+			{
+				"name": "Get LoadType",
+				"type": "Lookup",
+				"dependsOn": [
+					{
+						"activity": "Get DataBrricksNodeInfo",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"policy": {
+					"timeout": "0.00:10:00",
+					"retry": 1,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": {
+							"value": "select loadType as LoadType\nfrom DIF.DITaskDetail td\nwhere DITaskKey = @{pipeline().parameters.DIRelatedTaskKey}",
+							"type": "Expression"
+						},
+						"queryTimeout": "00:09:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "DS_Misc_CoreMetaDB",
+						"type": "DatasetReference"
+					}
+				}
+			},
+			{
+				"name": "If Full Then Incremental LoadType",
+				"type": "IfCondition",
+				"dependsOn": [
+					{
+						"activity": "If Full LoadType",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"expression": {
+						"value": "@equals(activity('Get LoadType').output.firstRow.LoadType,'Full then Incremental')",
+						"type": "Expression"
+					},
+					"ifTrueActivities": [
+						{
+							"name": "Lk Full then Incr table to Process",
+							"type": "Lookup",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.00:06:30",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "select  \n\t'/mnt/' + lower(DestinationRepositoryName) as rawMountPoint\n\t, DestinationRepositoryName as rawContainer\n\t, replace(lower(p.PipelineResultValue),'\\', '/') + '/' as rawFolder\n\t, SourceSystemFQDN as  SourceServerName \n\t, lower(SourceRepositoryName) as SourceDatabaseName\n\t, lower(SourceDatasetNameSpace) as tableSchema\n\t, replace(lower(SourceDatasetName), ' ', '_') as tableName\n\t, coalesce(aprt.AttributeName, 'NONE') as tablePartitionColumn \n\t, case when aprt.AttributeName like '%date%' then 'Y' else 'N' end as  tablePartitionedByDate\n\t, ISNULL(UICL.UniqueIDColumnList, '') as UniqueIDColumnList\n\t, SourceSystemSecretName as MetaDataSecretName\n\t, DestinationStorageType as DataLakeFormat\n\t, '0' as RowCountAuditTolerancePct\n\t, CASE WHEN ISNULL(UICL.UniqueIDColumnList, '') = '' THEN 'N' ELSE 'Y' END as DuplicateCheckInRefinedZone\n\t, DestinationLogicalDatabaseName as databricksDatabase\nfrom \n\tDIF.DITaskDetail td\n\tOUTER APPLY (\t\n\t\tSELECT\n\t\t\tUniqueIDColumnList = STRING_AGG(APKM.AttributeName, ',')\n\t\tFROM\n\t\t\tmetadata.Attribute APKM\n\t\tWHERE\n\t\t\ttd.SourceDatasetKey = APKM.DatasetKey\n            and APKM.AttributeIsPrimaryKey = 1\n\t) UICL\n    left outer join metadata.Attribute aprt\n            on td.SourceDatasetKey = aprt.DatasetKey\n            and aprt.AttributePartitionKeyOrder > 0\n    outer apply (select prs.PipelineResultValue,row_number()over(partition by pa.DITaskKey order by pa.PipelineActivityStartDateTime desc) as RowNum\n                            from logging.PipelineActivity pa\n                                    INNER JOIN logging.PipelineRun pr\n                                        on pa.PipelineRunKey = pr.PipelineRunKey\n                                    INNER JOIN config.Pipeline p\n                                        on pr.PipelineKey = p.PipelineKey\n                                    INNER JOIN logging.PipelineResult prs\n                                        on pa.PipelineActivityKey = prs.PipelineActivityKey\n                                        and pr.PipelineRunKey = prs.PipelineRunKey\n                                    INNER JOIN reference.PipelineResultName prn\n                                        on prs.PipelineResultNameKey = prn.PipelineResultNameKey\n                            where td.DITaskKey = pa.DITaskKey\n                            and prn.PipelineResultName = 'SinkPath'\n                                                    and prs.PipelineResultValue like '%full%'\n                            )p                                \nwhere \n\t1=1\n\tand p.RowNum = 1\n\tand  replace(lower(p.PipelineResultValue),'\\', '/') + '/' like '%/full/%'\n\tand DITaskKey = @{pipeline().parameters.DITaskKey}",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DS_Misc_CoreMetaDB",
+									"type": "DatasetReference"
+								},
+								"firstRowOnly": true
+							}
+						},
+						{
+							"name": "NB_FullIncrTableRepl_Refined_DataLake",
+							"type": "DatabricksNotebook",
+							"dependsOn": [
+								{
+									"activity": "Lk Full then Incr table to Process Refined",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.04:00:00",
+								"retry": 20,
+								"retryIntervalInSeconds": 600,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"notebookPath": {
+									"value": "/Repos/Shared/key2-demo-eia/notebooks/EIA_DIF/NB_FullTableRepl_Refined_DataLake",
+									"type": "Expression"
+								},
+								"baseParameters": {
+									"rawMountPoint": {
+										"value": "@activity('Lk Full then Incr table to Process').output.firstRow.rawMountPoint\n",
+										"type": "Expression"
+									},
+									"refinedMountPoint": {
+										"value": "@activity('Lk Full then Incr table to Process Refined').output.firstRow.refinedMountPoint",
+										"type": "Expression"
+									},
+									"scope": "bedrock-secrets",
+									"rawFolder": {
+										"value": "@activity('Lk Full then Incr table to Process').output.firstRow.rawFolder",
+										"type": "Expression"
+									},
+									"refinedFolder": {
+										"value": "@activity('Lk Full then Incr table to Process Refined').output.firstRow.refinedFolder",
+										"type": "Expression"
+									},
+									"tableName": {
+										"value": "@activity('Lk Full then Incr table to Process').output.firstRow.tableName",
+										"type": "Expression"
+									},
+									"tablePartitionColumn": {
+										"value": "@activity('Lk Full then Incr table to Process').output.firstRow.tablePartitionColumn",
+										"type": "Expression"
+									},
+									"tableSchema": {
+										"value": "@activity('Lk Full then Incr table to Process').output.firstRow.tableSchema",
+										"type": "Expression"
+									},
+									"ADFName": {
+										"value": "@pipeline().DataFactory",
+										"type": "Expression"
+									},
+									"PipelineName": {
+										"value": "@pipeline().Pipeline",
+										"type": "Expression"
+									},
+									"PipelineType": {
+										"value": "@activity('Get LoadType').output.firstRow.LoadType",
+										"type": "Expression"
+									},
+									"RunId": {
+										"value": "@pipeline().RunId",
+										"type": "Expression"
+									},
+									"MedataDataServer": {
+										"value": "@activity('Lk Metadata database info').output.firstRow.MedataDataServer",
+										"type": "Expression"
+									},
+									"MetaDataDatabase": {
+										"value": "@activity('Lk Metadata database info').output.firstRow.MetaDataDatabase",
+										"type": "Expression"
+									},
+									"MetaDataUserID": {
+										"value": "@activity('Lk Metadata database info').output.firstRow.UserID",
+										"type": "Expression"
+									},
+									"MetaDataSecretName": {
+										"value": "@activity('Lk Full then Incr table to Process').output.firstRow.MetaDataSecretName",
+										"type": "Expression"
+									},
+									"databricksDatabase": {
+										"value": "@activity('Lk Full then Incr table to Process').output.firstRow.databricksDatabase",
+										"type": "Expression"
+									},
+									"SourceServerName": {
+										"value": "@activity('Lk Full then Incr table to Process').output.firstRow.SourceServerName",
+										"type": "Expression"
+									},
+									"SourceDatabaseName": {
+										"value": "@activity('Lk Full then Incr table to Process').output.firstRow.SourceDatabaseName",
+										"type": "Expression"
+									},
+									"SourceRowCount": {
+										"value": "@string(pipeline().parameters.SourceRowCount)",
+										"type": "Expression"
+									},
+									"RowCountAuditTolerancePct": {
+										"value": "@activity('Lk Full then Incr table to Process').output.firstRow.RowCountAuditTolerancePct",
+										"type": "Expression"
+									},
+									"DuplicateCheckInRefinedZone": {
+										"value": "@activity('Lk Full then Incr table to Process').output.firstRow.DuplicateCheckInRefinedZone",
+										"type": "Expression"
+									},
+									"UniqueIDColumnList": {
+										"value": "@activity('Lk Full then Incr table to Process').output.firstRow.UniqueIDColumnList",
+										"type": "Expression"
+									},
+									"DataLakeFormat": {
+										"value": "@activity('Lk Full then Incr table to Process').output.firstRow.DataLakeFormat",
+										"type": "Expression"
+									},
+									"SoftDeleteCondition": {
+										"value": "@activity('Lk Full then Incr table to Process Refined').output.firstRow.SoftDeleteCondition",
+										"type": "Expression"
+									},
+									"tablePartitionedByDate": {
+										"value": "@activity('Lk Full then Incr table to Process').output.firstRow.tablePartitionedByDate",
+										"type": "Expression"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_Core_DataBricks_Pool",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Add Pipeline Activity for NB_Full_Incr",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "Update Load Type to Incremental",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[DIF].[AddPipelineActivity]",
+								"storedProcedureParameters": {
+									"DITaskKey": {
+										"value": {
+											"value": "@pipeline().parameters.DIRelatedTaskKey",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									},
+									"PipelineActivityEndDateTime": {
+										"value": {
+											"value": "@split(activity('NB_FullIncrTableRepl_Refined_DataLake').output.runOutput,'|')[0]",
+											"type": "Expression"
+										},
+										"type": "DateTime"
+									},
+									"PipelineActivityName": {
+										"value": {
+											"value": "@concat(pipeline().Pipeline,'.NB_PSS_FullTableRepl_Refined_DataLake')",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineActivityRunID": {
+										"value": {
+											"value": "@activity('NB_FullIncrTableRepl_Refined_DataLake').ActivityRunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineActivityStartDateTime": {
+										"value": {
+											"value": "@split(activity('NB_FullIncrTableRepl_Refined_DataLake').output.runOutput,'|')[0]",
+											"type": "Expression"
+										},
+										"type": "DateTime"
+									},
+									"PipelineActivityType": {
+										"value": {
+											"value": "Source Audit",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineFullName": {
+										"value": {
+											"value": "@pipeline().Pipeline",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineRunID": {
+										"value": {
+											"value": "@pipeline().RunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_DIF_Metadata",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Add result value for NB_FullRawToRefined_copy1",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "Add Pipeline Activity for NB_Full_Incr",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[DIF].[AddPipelineResultMultiple]",
+								"storedProcedureParameters": {
+									"PipelineActivityRunID": {
+										"value": {
+											"value": "@activity('NB_FullIncrTableRepl_Refined_DataLake').ActivityRunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineResult": {
+										"value": {
+											"value": "@concat('SinkPath|',split(activity('NB_FullIncrTableRepl_Refined_DataLake').output.runOutput,'|')[1],';RowsCopied|',split(activity('NB_FullIncrTableRepl_Refined_DataLake').output.runOutput,'|')[2],';executionStatus|',split(activity('NB_FullIncrTableRepl_Refined_DataLake').output.runOutput,'|')[4],';LoadType|',activity('Get LoadType').output.firstRow.LoadType)\n",
+											"type": "Expression"
+										},
+										"type": "String"
+									},
+									"PipelineRunID": {
+										"value": {
+											"value": "@pipeline().RunId",
+											"type": "Expression"
+										},
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_DIF_Metadata",
+								"type": "LinkedServiceReference"
+							}
+						},
+						{
+							"name": "Lk Full then Incr table to Process Refined",
+							"type": "Lookup",
+							"dependsOn": [
+								{
+									"activity": "Lk Full then Incr table to Process",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.00:06:30",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "select '/mnt/' + lower(DestinationRepositoryName) as refinedMountPoint\n, lower(DestinationDatasetPath)  + '/' + lower(SourceDatasetNameSpace) + '/' + lower(SourceDatasetName) + '/' as refinedFolder\n, DestinationRepositoryName as refinedContainer\n, DITaskSourceFilterLogic as SoftDeleteCondition\nfrom DIF.DITaskDetail td\nwhere DITaskKey = @{pipeline().parameters.DIRelatedTaskKey}",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "DS_Misc_CoreMetaDB",
+									"type": "DatasetReference"
+								},
+								"firstRowOnly": true
+							}
+						},
+						{
+							"name": "Update Load Type to Incremental",
+							"type": "SqlServerStoredProcedure",
+							"dependsOn": [
+								{
+									"activity": "NB_FullIncrTableRepl_Refined_DataLake",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "7.00:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"storedProcedureName": "[DIF].[UpdateDITaskLoadType]",
+								"storedProcedureParameters": {
+									"DITaskKey": {
+										"value": {
+											"value": "@pipeline().parameters.DIRelatedTaskKey",
+											"type": "Expression"
+										},
+										"type": "Int32"
+									},
+									"LoadType": {
+										"value": "Incremental",
+										"type": "String"
+									}
+								}
+							},
+							"linkedServiceName": {
+								"referenceName": "LS_DIF_Metadata",
+								"type": "LinkedServiceReference"
+							}
+						}
+					]
+				}
+			}
+		],
+		"parameters": {
+			"DITaskKey": {
+				"type": "int",
+				"defaultValue": 26
+			},
+			"DIRelatedTaskKey": {
+				"type": "int",
+				"defaultValue": 30
+			},
+			"SourceRowCount": {
+				"type": "int",
+				"defaultValue": 1
+			}
+		},
+		"folder": {
+			"name": "DIF SQLServer"
+		},
+		"annotations": [],
+		"lastPublishTime": "2023-08-16T18:07:11Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}

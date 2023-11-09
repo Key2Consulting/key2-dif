@@ -1,0 +1,16 @@
+{
+	"name": "DS_Misc_CoreMetaDB",
+	"properties": {
+		"linkedServiceName": {
+			"referenceName": "LS_DIF_Metadata",
+			"type": "LinkedServiceReference"
+		},
+		"folder": {
+			"name": "DIF"
+		},
+		"annotations": [],
+		"type": "AzureSqlTable",
+		"schema": []
+	},
+	"type": "Microsoft.DataFactory/factories/datasets"
+}
