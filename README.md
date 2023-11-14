@@ -21,5 +21,6 @@ At the moment, we're asking that folks download the code from this repository an
 - [Overview](https://github.com/Key2Consulting/key2-demo-eia/blob/main/documentation/Key2%20Data%20Ingestion%20Framework%20Overview.docx)
 - [Database Configuration Guide](https://github.com/Key2Consulting/key2-demo-eia/blob/main/documentation/Key2%20Data%20Ingestion%20Framework%20-%20Configuration%20Database%20Guide.docx)
 - [Data Factory Pipeline Overview](https://github.com/Key2Consulting/key2-demo-eia/blob/main/documentation/Key2%20Data%20Ingestion%20Framework%20-%20ADF%20Pipeline%20Overview.docx)
+- [DIF ERD](https://github.com/Key2Consulting/key2-dif/blob/main/documentation/Data%20Ingestion%20Framework%20-%20ERD.pdf)
 
 
